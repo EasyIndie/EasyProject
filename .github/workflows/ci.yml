@@ -1,0 +1,69 @@
+# ============================================================
+# CI 流水线骨架
+# ============================================================
+# 根据项目技术栈取消注释并修改以下内容：
+# - 语言/运行时版本
+# - 包管理器
+# - 测试命令
+# - 构建命令
+# ============================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ----------------------------------------------------------
+  # Lint — 代码风格和静态分析
+  # ----------------------------------------------------------
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 根据语言取消注释：
+      # - uses: actions/setup-node@v4
+      # - uses: actions/setup-python@v5
+      # - uses: actions/setup-go@v5
+      # - run: npm run lint
+      # - run: ruff check .
+      # - run: golangci-lint run
+
+  # ----------------------------------------------------------
+  # Test — 单元测试 + 集成测试
+  # ----------------------------------------------------------
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      # 根据语言取消注释：
+      # - run: npm test
+      # - run: pytest --cov
+      # - run: go test ./...
+
+  # ----------------------------------------------------------
+  # Build — 构建产物（如果是编译型语言）
+  # ----------------------------------------------------------
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      # 根据语言取消注释：
+      # - run: npm run build
+      # - run: go build ./...
+      # - run: cargo build --release
+
+  # ----------------------------------------------------------
+  # Security — 安全扫描（可选但推荐）
+  # ----------------------------------------------------------
+  # security:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     # Trivy, Snyk, CodeQL 等
+  #     # - uses: github/codeql-action/init@v3
