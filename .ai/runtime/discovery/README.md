@@ -34,14 +34,25 @@ python3 scripts/agent-task-approve.py \
 Without `--approve-write`, the promoted Task Envelope remains read-only.
 That flag explicitly enables repository writes for the future Agent task, but
 network access, secret access, and external side effects remain disabled.
-Promotion does not start an Agent or create a plan; the user must separately
-review the resulting JSON and start an Evolution run.
 
-Before promotion, the tool verifies the discovery report's repository and base
-SHA, confirms the source is still Git-tracked and unchanged, and checks that
-the marker remains at the recorded line. Stale evidence is rejected and must
-be regenerated. The task is validated against the repository Task Envelope
-schema before output.
+## Start the approved task in Evolution
+
+The approval artifact can be passed directly to Evolution. The run ID must
+match the candidate Task Envelope ID:
+
+```bash
+python3 scripts/evolution.py start \
+  --id DISC-0123456789ab \
+  --approved-task ../approved-task.json \
+  --harness codex
+```
+
+Evolution rechecks the approval mode, base SHA, tracked source path, file hash,
+marker location, task ID, permissions, and Task Envelope schema before creating
+the candidate worktree. It then starts the normal isolated Agent workflow.
+This is a real Agent execution and should only be run locally after reviewing
+the task and confirming the selected CLI configuration. Evolution still does
+not push, create remote PRs, merge, deploy, or publish.
 
 ## Safety and semantics
 
@@ -54,10 +65,10 @@ schema before output.
   line, marker type, and file hash.
 - Candidate tasks default to no repository-write, network, secret, or
   external-side-effect permissions.
-- The approval command never launches Agents, modifies source files, creates
-  Issues, or invokes GitHub.
-- Candidates are not queued for execution. A human must validate the evidence,
-  write the real task scope, and explicitly enable repository writes if needed.
+- Promotion never launches Agents, modifies source files, creates Issues, or
+  invokes GitHub.
+- Execution occurs only after the approved artifact is separately supplied to
+  Evolution. Network, secret, and external-side-effect permissions remain denied.
 
 This first discovery milestone intentionally favors precision and traceable
 evidence over broad heuristic coverage. Future rules should be added only with
