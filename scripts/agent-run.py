@@ -78,6 +78,14 @@ def build_command(harness: str, task: dict, prompt: str) -> list[str]:
     raise ValueError(f"Unsupported harness: {harness}")
 
 
+
+def resolve_workspace(path: Path) -> Path:
+    workspace = path.resolve()
+    if not workspace.is_dir():
+        raise ValueError(f"Workspace directory does not exist: {workspace}")
+    return workspace
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", required=True, type=Path, help="Path to a task envelope JSON file")
@@ -94,9 +102,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ValueError(f"Required executable not found on PATH: {executable}")
         prompt = build_prompt(task)
         command = build_command(args.harness, task, prompt)
-        workspace = args.cwd.resolve()
-        if not workspace.is_dir():
-            raise ValueError(f"Workspace directory does not exist: {workspace}")
+        workspace = resolve_workspace(args.cwd)
     except (ValueError, OSError, KeyError) as exc:
         print(f"agent-run: {exc}", file=sys.stderr)
         return 2
