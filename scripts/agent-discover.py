@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -12,7 +13,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MARKERS = ("TODO", "FIXME", "HACK")
+MARKER_PATTERN = re.compile(r"(?<![A-Za-z0-9_])(TODO|FIXME|HACK)(?![A-Za-z0-9_])")
 MAX_FILE_BYTES = 1024 * 1024
 SELF_PATHS = {"scripts/agent-discover.py", "tests/test_agent_discover.py"}
 
@@ -118,11 +119,15 @@ def discover(root: Path, max_candidates: int = 50) -> dict[str, Any]:
     candidates: list[dict[str, Any]] = []
     scanned_files = 0
     skipped_files = 0
+    truncated = False
     for relative in git_files(root):
         if relative in SELF_PATHS:
             skipped_files += 1
             continue
         path = root / relative
+        if path.is_symlink():
+            skipped_files += 1
+            continue
         try:
             raw = path.read_bytes()
         except OSError:
@@ -139,16 +144,17 @@ def discover(root: Path, max_candidates: int = 50) -> dict[str, Any]:
         scanned_files += 1
         digest = hashlib.sha256(raw).hexdigest()
         for line_number, line in enumerate(content.splitlines(), start=1):
-            for marker in MARKERS:
-                if marker in line.split():
-                    candidates.append(candidate_for(relative, line_number, marker, digest))
-                    if len(candidates) >= max_candidates:
-                        break
-            if len(candidates) >= max_candidates:
+            for match in MARKER_PATTERN.finditer(line):
+                candidates.append(candidate_for(relative, line_number, match.group(1), digest))
+                if len(candidates) > max_candidates:
+                    truncated = True
+                    break
+            if truncated:
                 break
-        if len(candidates) >= max_candidates:
+        if truncated:
             break
 
+    candidates = candidates[:max_candidates]
     return {
         "discovery_version": "1.0",
         "repository": root.name,
@@ -157,7 +163,7 @@ def discover(root: Path, max_candidates: int = 50) -> dict[str, Any]:
         "scanned_files": scanned_files,
         "skipped_files": skipped_files,
         "candidate_count": len(candidates),
-        "candidates_truncated": len(candidates) >= max_candidates,
+        "candidates_truncated": truncated,
         "candidates": candidates,
         "safety": {
             "agents_executed": False,
