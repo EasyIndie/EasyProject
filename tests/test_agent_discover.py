@@ -4,8 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from jsonschema import Draft202012Validator
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "agent-discover.py"
+
+ROOT = Path(__file__).resolve().parents[1]
+MODULE_PATH = ROOT / "scripts" / "agent-discover.py"
 SPEC = importlib.util.spec_from_file_location("easyproject_agent_discover", MODULE_PATH)
 discovery = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -34,12 +37,17 @@ class AgentDiscoveryTests(unittest.TestCase):
             self.assertFalse(report["safety"]["agents_executed"])
             self.assertFalse(report["safety"]["repository_write_permission"])
             self.assertTrue(report["safety"]["human_review_required"])
+            schema = __import__("json").loads(
+                (ROOT / ".ai/runtime/schemas/task.schema.json").read_text(encoding="utf-8")
+            )
+            for candidate in report["candidates"]:
+                Draft202012Validator(schema).validate(candidate["task"])
+                self.assertFalse(candidate["task"]["permissions"]["repository_write"])
+                self.assertFalse(candidate["task"]["permissions"]["network_access"])
+                self.assertEqual(candidate["task"]["risk"], "low")
             first = report["candidates"][0]
             self.assertEqual(first["evidence"]["path"], "src/sample.py")
             self.assertIn(first["evidence"]["marker"], {"TODO", "FIXME"})
-            self.assertFalse(first["task"]["permissions"]["repository_write"])
-            self.assertFalse(first["task"]["permissions"]["network_access"])
-            self.assertEqual(first["task"]["risk"], "low")
 
     def test_candidate_ids_are_deterministic(self):
         with tempfile.TemporaryDirectory() as tmp:
