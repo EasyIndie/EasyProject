@@ -60,8 +60,8 @@ def build_command(harness: str, task: dict, prompt: str, *, allow_unsandboxed_pi
 
     if harness == "pi":
         # Pi's --tools allowlist is a capability restriction, not an OS sandbox.
-        # Write access therefore requires an explicit, per-task acknowledgement
-        # carried in the Task Envelope so the approval record shows the boundary change.
+        # Write access requires an explicit CLI override; a task envelope alone
+        # cannot authorize this unsafe host-access mode.
         if permissions["repository_write"] and not allow_unsandboxed_pi_write:
             raise ValueError(
                 "Pi has no OS-level sandbox. Write access is disabled by default; "
