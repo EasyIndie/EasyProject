@@ -392,6 +392,7 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             task_output.parent.mkdir(parents=True, exist_ok=True)
             workspace = prepare_worktree(ROOT, runs_dir, task_id, record) if use_worktrees else ROOT
             cancel_file = runs_dir / task_id / f"cancel-attempt-{attempt}.request"
+            task_envelope = json.loads(task_path.read_text(encoding="utf-8"))
             command = [
                 sys.executable, str(RUNNER), "--task", str(task_path),
                 "--harness", item.get("harness", "codex"),
@@ -413,7 +414,6 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             result = subprocess.run(command, cwd=ROOT, check=False)
             record["last_exit_code"] = result.returncode
             record["handoff"] = str(task_output)
-            task_envelope = json.loads(task_path.read_text(encoding="utf-8"))
             automated_checks = {"status": "not_configured", "results": []}
             if result.returncode == 0:
                 automated_checks = run_acceptance_checks(
