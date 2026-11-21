@@ -184,7 +184,7 @@ def collect_change_evidence(repo: Path, base_commit: str, task_id: str,
             check_output += extra_check.stdout + extra_check.stderr
     stat = git_output(repo, "diff", "--stat", base_commit)
     fingerprint = hashlib.sha256(
-        (status + "\\0" + diff + "\\0" + "\\n".join(untracked)).encode("utf-8")
+        (status + "\\0" + diff + "\\0" + "\n".join(untracked)).encode("utf-8")
     ).hexdigest()
     evidence_dir = runs_dir / task_id
     diff_path = evidence_dir / "review.diff"
