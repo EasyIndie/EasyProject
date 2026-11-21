@@ -309,7 +309,7 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                 continue
             dependencies = item.get("depends_on", [])
             dependency_states = [state["tasks"][dep]["status"] for dep in dependencies]
-            if any(status in {"failed", "blocked"} for status in dependency_states):
+            if any(status in {"failed", "blocked", "cancelled"} for status in dependency_states):
                 record.update(status="blocked", updated_at=now())
                 state["updated_at"] = now()
                 save_state(state_path, state)
@@ -324,12 +324,17 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             task_output = runs_dir / task_id / f"attempt-{attempt}.handoff.json"
             task_output.parent.mkdir(parents=True, exist_ok=True)
             workspace = prepare_worktree(ROOT, runs_dir, task_id, record) if use_worktrees else ROOT
+            cancel_file = runs_dir / task_id / f"cancel-attempt-{attempt}.request"
             command = [
                 sys.executable, str(RUNNER), "--task", str(task_path),
                 "--harness", item.get("harness", "codex"),
                 "--output", str(task_output), "--cwd", str(workspace),
+                "--cancel-file", str(cancel_file),
             ]
-            record.update(status="running", attempts=attempt, updated_at=now())
+            record.update(
+                status="running", attempts=attempt, cancel_file=str(cancel_file),
+                started_at=now(), updated_at=now(),
+            )
             state["updated_at"] = now()
             save_state(state_path, state)
             result = subprocess.run(command, cwd=ROOT, check=False)
@@ -349,14 +354,22 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                     automated_checks=automated_checks,
                 )
                 record["review_evidence"] = evidence["evidence_path"]
-            if result.returncode == 0 and automated_checks["status"] != "failed":
+            if result.returncode == 130:
+                record.update(status="cancelled", termination_reason="cancelled", finished_at=now())
+            elif result.returncode == 0 and automated_checks["status"] != "failed":
                 # The adapter intentionally emits partial; only explicit human
                 # approval may transition this task to completed.
                 record["status"] = "awaiting_review"
             elif attempt < item.get("max_attempts", 1):
-                record["status"] = "retryable"
+                record.update(
+                    status="retryable",
+                    termination_reason="timeout" if result.returncode == 124 else "process_failed",
+                )
             else:
-                record["status"] = "failed"
+                record.update(
+                    status="failed",
+                    termination_reason="timeout" if result.returncode == 124 else "process_failed",
+                )
             record["updated_at"] = now()
             state["updated_at"] = now()
             save_state(state_path, state)
@@ -366,6 +379,25 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             return 1 if result.returncode or automated_checks["status"] == "failed" else 0
     save_state(state_path, state)
     return 0
+
+
+def request_cancel(task_id: str, state: dict[str, Any], runs_dir: Path) -> Path:
+    """Write a cooperative cancellation marker for the currently running attempt."""
+    record = state.get("tasks", {}).get(task_id)
+    if record is None:
+        raise ValueError(f"Unknown task_id: {task_id}")
+    if record.get("status") != "running":
+        raise ValueError(f"{task_id} is {record.get('status')}; only running tasks can be cancelled.")
+    attempt = record.get("attempts", 0)
+    if attempt < 1:
+        raise ValueError(f"{task_id} has no active attempt to cancel.")
+    marker = runs_dir / task_id / f"cancel-attempt-{attempt}.request"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        marker.write_text(json.dumps({"task_id": task_id, "attempt": attempt, "requested_at": now()}) + "\\n", encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"Cannot create cancellation marker: {exc}") from exc
+    return marker
 
 
 def approve(task_id: str, state: dict[str, Any], state_path: Path) -> None:
@@ -532,6 +564,7 @@ def main() -> int:
     actions = parser.add_mutually_exclusive_group()
     actions.add_argument("--approve", metavar="TASK_ID", help="Approve a reviewed task handoff.")
     actions.add_argument("--integrate", metavar="TASK_ID", help="Integrate an approved worktree task into the current branch.")
+    actions.add_argument("--cancel", metavar="TASK_ID", help="Request cooperative cancellation of a running task.")
     parser.add_argument("--dry-run", action="store_true", help="Validate and display the DAG without creating journals or worktrees.")
     parser.add_argument("--worktrees", action="store_true", help="Run each task in its own detached Git worktree.")
     args = parser.parse_args()
@@ -568,6 +601,12 @@ def main() -> int:
                 raise ValueError("--integrate requires both --resume and --worktrees.")
             integrate_task(ROOT, args.integrate, state, state_path)
             print(f"{args.integrate}: {state['tasks'][args.integrate]['status']} (integration)")
+            return 0
+        if args.cancel:
+            if not args.resume:
+                raise ValueError("--cancel requires --resume.")
+            marker = request_cancel(args.cancel, state, runs_dir)
+            print(f"{args.cancel}: cancellation requested; runner confirmation is pending ({marker})")
             return 0
         return run_plan(plan, runs_dir, state, args.worktrees)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
