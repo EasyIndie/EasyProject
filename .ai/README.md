@@ -17,6 +17,7 @@ This directory contains shared project context, rules, role contracts, workflows
 | `context/` | Project purpose, users, architecture, constraints, and stack |
 | `rules/` | Shared engineering, Git, documentation, and safety rules |
 | `agents/` | Tool-agnostic role contracts and handoff expectations |
+| `runtime/` | Harness-neutral task/handoff schemas and Pi/Codex/Claude adapter guidance |
 | `workflows/` | Quick Change, Feature Development, and Major Change |
 | `prompts/` | Reusable task prompts |
 | `templates/` | Lightweight specs, ADRs, plans, and reports |
