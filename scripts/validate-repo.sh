@@ -23,7 +23,7 @@ for file in "${required_files[@]}"; do
   fi
 done
 
-for tool in python3 shellcheck markdownlint-cli2 actionlint; do
+for tool in python3 shellcheck markdownlint-cli2 actionlint lychee zizmor gitleaks; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "::error::Required quality tool is missing: $tool"
     exit 1
@@ -47,6 +47,9 @@ bash -n scripts/validate-repo.sh
 shellcheck bootstrap.sh scripts/validate-repo.sh
 
 markdownlint-cli2 "**/*.md" "#node_modules" "#.git"
+lychee --offline --no-progress .
 actionlint -color
+zizmor --collect=workflows --min-severity medium .
+gitleaks git --redact --no-banner .
 
-echo "Repository quality gates: OK"
+echo "Repository quality and security gates: OK"
