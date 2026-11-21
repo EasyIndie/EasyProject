@@ -128,7 +128,7 @@ def prepare_worktree(repo: Path, runs_dir: Path, task_id: str,
             raise ValueError(task_id + ": recorded path is not a worktree of this repository.")
         return path
 
-    path = (runs_dir / "worktrees" / task_id).resolve()
+    path = (repo.parent / ("." + repo.name + "-agent-worktrees") / runs_dir.name / task_id).resolve()
     if path.exists():
         raise ValueError(task_id + ": worktree path already exists but is not recorded: " + str(path))
     path.parent.mkdir(parents=True, exist_ok=True)
