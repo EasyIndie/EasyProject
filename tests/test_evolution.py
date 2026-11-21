@@ -228,7 +228,8 @@ class EvolutionContractTests(unittest.TestCase):
             self.assertEqual(Path(plan["tasks"][0]["task_file"]), task_path)
             self.assertTrue(task_path.is_file())
             self.assertTrue(plan_path.is_file())
-            self.assertEqual(task_path.parent, run_dir)
+            self.assertEqual(task_path.parent, run_dir / "orchestrator")
+            self.assertTrue(task_path.is_relative_to(run_dir / "orchestrator"))
 
     def test_plan_rejects_task_id_mismatch(self):
         with tempfile.TemporaryDirectory() as tmp:
