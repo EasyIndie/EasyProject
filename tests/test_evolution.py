@@ -1,5 +1,7 @@
+import hashlib
 import importlib.util
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -63,8 +65,122 @@ class EvolutionContractTests(unittest.TestCase):
             manifest = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(manifest["stable"]["base_sha"], "abc123")
             self.assertEqual(manifest["candidate"]["branch"], "evolution/manifest-test")
+            self.assertEqual(manifest["task_source"], "manual-goal")
             self.assertFalse(manifest["credential_values_recorded"])
             self.assertNotIn("api_key", json.dumps(manifest).lower())
+
+    def make_approved_artifact(self, root):
+        root.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", str(root)], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"], check=True)
+        schema_dir = root / ".ai/runtime/schemas"
+        schema_dir.mkdir(parents=True)
+        schema = (evolution.ROOT / ".ai/runtime/schemas/task.schema.json").read_text(encoding="utf-8")
+        (schema_dir / "task.schema.json").write_text(schema, encoding="utf-8")
+        source = root / "src" / "sample.py"
+        source.parent.mkdir()
+        source.write_text("# TODO: fix parser\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-qm", "fixture"], check=True)
+        base_sha = subprocess.check_output(
+            ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
+        ).strip()
+        task_id = "DISC-0123456789ab"
+        task = {
+            "protocol_version": "1.0",
+            "task_id": task_id,
+            "issue": None,
+            "objective": "Resolve the parser TODO.",
+            "context": ["Human-approved discovery task."],
+            "inputs": ["src/sample.py"],
+            "constraints": ["Do not access secrets or use network access."],
+            "acceptance_criteria": ["The marker is resolved.", "A regression test is added."],
+            "risk": "medium",
+            "permissions": {
+                "repository_read": True,
+                "repository_write": True,
+                "network_access": False,
+                "secret_access": False,
+                "external_side_effects": False,
+            },
+            "preferred_role": "developer",
+            "preferred_harness": "any",
+            "model_hint": None,
+            "timeout_minutes": 30,
+            "metadata": {
+                "source": "human-approved-discovery",
+                "correlation_id": task_id,
+                "labels": ["discovery", "human-approved"],
+            },
+            "acceptance_checks": ["python-unittest"],
+        }
+        wrapper = {
+            "promotion_version": "1.0",
+            "approved_at": "2026-11-22T00:00:00+00:00",
+            "approval_note": "Reviewed and approved.",
+            "approval_mode": "write-enabled",
+            "evidence_verified": {
+                "candidate_id": task_id,
+                "path": "src/sample.py",
+                "line": 1,
+                "marker": "TODO",
+                "file_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                "base_sha": base_sha,
+            },
+            "task": task,
+        }
+        artifact = root.parent / "approved-task.json"
+        artifact.write_text(json.dumps(wrapper), encoding="utf-8")
+        return source, artifact, task_id, wrapper
+
+    def test_loads_verified_write_enabled_task_and_overrides_harness(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            _, artifact, task_id, _ = self.make_approved_artifact(root)
+            task, evidence = evolution.load_approved_task(artifact, task_id, "codex", root)
+            self.assertEqual(task["task_id"], task_id)
+            self.assertEqual(task["preferred_harness"], "codex")
+            self.assertTrue(task["permissions"]["repository_write"])
+            self.assertEqual(evidence["path"], "src/sample.py")
+
+    def test_rejects_read_only_promotion_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            _, artifact, task_id, wrapper = self.make_approved_artifact(root)
+            wrapper["approval_mode"] = "read-only"
+            artifact.write_text(json.dumps(wrapper), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "write-enabled"):
+                evolution.load_approved_task(artifact, task_id, "codex", root)
+
+    def test_rejects_stale_source_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            source, artifact, task_id, _ = self.make_approved_artifact(root)
+            source.write_text("# TODO: changed after approval\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "source changed"):
+                evolution.load_approved_task(artifact, task_id, "codex", root)
+
+    def test_rejects_stale_base_sha(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            _, artifact, task_id, _ = self.make_approved_artifact(root)
+            (root / "next.py").write_text("pass\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "next.py"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "advance"], check=True)
+            with self.assertRaisesRegex(ValueError, "base SHA is stale"):
+                evolution.load_approved_task(artifact, task_id, "codex", root)
+
+    def test_rejects_task_id_mismatch_and_unsafe_permissions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            _, artifact, task_id, wrapper = self.make_approved_artifact(root)
+            with self.assertRaisesRegex(ValueError, "run ID"):
+                evolution.load_approved_task(artifact, "different-id", "codex", root)
+            wrapper["task"]["permissions"]["network_access"] = True
+            artifact.write_text(json.dumps(wrapper), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "cannot enable network"):
+                evolution.load_approved_task(artifact, task_id, "codex", root)
 
     def test_report_distinguishes_not_started_from_completed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -113,6 +229,14 @@ class EvolutionContractTests(unittest.TestCase):
             self.assertTrue(task_path.is_file())
             self.assertTrue(plan_path.is_file())
             self.assertEqual(task_path.parent, run_dir)
+
+    def test_plan_rejects_task_id_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            task = evolution.make_task(
+                "different", "Add a regression test", "codex", ["python-unittest"]
+            )
+            with self.assertRaisesRegex(ValueError, "must match"):
+                evolution.write_run_inputs(Path(tmp) / "runtime", "expected", task)
 
 
 if __name__ == "__main__":
