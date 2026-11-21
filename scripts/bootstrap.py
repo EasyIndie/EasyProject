@@ -37,13 +37,12 @@ def main() -> int:
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[1]
-    default_name = root.name
     values = {
         "PROJECT_NAME": args.name or os.getenv("PROJECT_NAME", ""),
         "PROJECT_DESCRIPTION": args.description or os.getenv("PROJECT_DESCRIPTION", ""),
-        "PROJECT_LANGUAGE": args.language or os.getenv("PROJECT_LANGUAGE", "Not specified"),
+        "PROJECT_LANGUAGE": args.language or os.getenv("PROJECT_LANGUAGE", ""),
         "REPO_URL": args.repo_url or os.getenv("REPO_URL", ""),
-        "COPYRIGHT_HOLDER": args.copyright or os.getenv("COPYRIGHT_HOLDER", "Your Organization"),
+        "COPYRIGHT_HOLDER": args.copyright or os.getenv("COPYRIGHT_HOLDER", ""),
         "PROJECT_YEAR": str(dt.date.today().year),
     }
 
@@ -52,7 +51,7 @@ def main() -> int:
             parser.error("--yes requires --name and --description (or matching environment variables).")
     else:
         print("\nEasyProject initialization\n")
-        values["PROJECT_NAME"] = values["PROJECT_NAME"] or ask("项目名称", default_name, True)
+        values["PROJECT_NAME"] = values["PROJECT_NAME"] or ask("项目名称", root.name, True)
         values["PROJECT_DESCRIPTION"] = values["PROJECT_DESCRIPTION"] or ask("一句话描述", "TODO: describe this project", True)
         values["PROJECT_LANGUAGE"] = values["PROJECT_LANGUAGE"] or ask("技术栈（逗号分隔）", "Not specified")
         values["REPO_URL"] = values["REPO_URL"] or ask("仓库 URL", "")
@@ -64,6 +63,8 @@ def main() -> int:
             print("已取消，未修改任何文件。")
             return 0
 
+    values["PROJECT_LANGUAGE"] = values["PROJECT_LANGUAGE"] or "Not specified"
+    values["COPYRIGHT_HOLDER"] = values["COPYRIGHT_HOLDER"] or "Your Organization"
     if not values["REPO_URL"]:
         values["REPO_URL"] = f"https://github.com/your-org/{values['PROJECT_NAME']}"
 
