@@ -398,6 +398,11 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                 "--output", str(task_output), "--cwd", str(workspace),
                 "--cancel-file", str(cancel_file),
             ]
+            if (
+                item.get("harness", "codex") == "pi"
+                and task_envelope.get("harness_options", {}).get("pi_unsandboxed_write") is True
+            ):
+                command.append("--allow-unsandboxed-pi-write")
             record.update(
                 status="running", attempts=attempt, cancel_file=str(cancel_file),
                 started_at=now(), updated_at=now(),
