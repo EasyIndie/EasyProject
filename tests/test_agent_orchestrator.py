@@ -95,6 +95,7 @@ class OrchestratorTests(unittest.TestCase):
             runs = Path(tmp) / "runs"
             worktree = orchestrator.prepare_worktree(root, runs, "task-one", record)
             self.assertTrue((worktree / "README.md").is_file())
+            self.assertFalse(worktree.is_relative_to(root))
             self.assertEqual(orchestrator.prepare_worktree(root, runs, "task-one", record), worktree)
             top = subprocess.run(["git", "-C", str(worktree), "rev-parse", "--show-toplevel"],
                                  check=True, capture_output=True, text=True).stdout.strip()
