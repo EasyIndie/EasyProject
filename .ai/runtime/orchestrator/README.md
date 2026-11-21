@@ -49,16 +49,31 @@ Use a different `--runs-dir` for independent runs. The journal is atomically
 replaced after each state transition. Do not edit it while a run is active.
 
 Only one agent process is invoked per command. A successful adapter exit produces
-`awaiting_review`, not `completed`; inspect the handoff, raw logs, working-tree
-diff, and acceptance criteria before approving:
+`awaiting_review`, not `completed`. With `--worktrees`, the orchestrator captures
+a review bundle under the run directory:
+
+- `review-evidence.json`: base commit, changed-file manifest, diff summary,
+  whitespace-check result, and a workspace fingerprint.
+- `review.diff`: tracked and untracked textual/binary Git diff output.
+- The acceptance section remains `pending_human_review`; natural-language
+  criteria are never auto-certified by the collector.
+
+Inspect the handoff, raw logs, review bundle, and Task Envelope acceptance
+criteria before approving:
 
 ```bash
 python3 scripts/agent-orchestrate.py --plan .ai/runtime/examples/plan.json --resume --worktrees --approve docs
 python3 scripts/agent-orchestrate.py --plan .ai/runtime/examples/plan.json --resume
 ```
 
-Approval unlocks dependent tasks. Failed process executions are retried up to
-`max_attempts`; exhausted failures block dependent tasks. A crash while a task
+Approval unlocks dependent tasks. For worktree tasks, approval rechecks the
+workspace fingerprint against the captured evidence and rejects approval if any
+file changed after review or `git diff --check` failed. Capture a fresh review
+bundle and inspect it again before retrying approval. This check is an integrity
+guard, not proof that product acceptance criteria passed.
+
+Failed process executions are retried up to `max_attempts`; exhausted failures
+block dependent tasks. A crash while a task
 is marked `running` requires human inspection before manually reconciling the
 journal—automatic replay could duplicate partial edits.
 
