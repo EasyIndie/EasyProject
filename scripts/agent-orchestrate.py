@@ -402,6 +402,7 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                 status="running", attempts=attempt, cancel_file=str(cancel_file),
                 started_at=now(), updated_at=now(),
             )
+            record.setdefault("first_started_at", record["started_at"])
             state["updated_at"] = now()
             save_state(state_path, state)
             result = subprocess.run(command, cwd=ROOT, check=False)
@@ -427,20 +428,21 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                 # The adapter intentionally emits partial; only explicit human
                 # approval may transition this task to completed.
                 record["status"] = "awaiting_review"
+                record["finished_at"] = now()
             elif attempt < item.get("max_attempts", 1):
                 reason = (
                     "timeout" if result.returncode == 124
                     else "acceptance_checks_failed" if result.returncode == 0
                     else "process_failed"
                 )
-                record.update(status="retryable", termination_reason=reason)
+                record.update(status="retryable", termination_reason=reason, finished_at=now())
             else:
                 reason = (
                     "timeout" if result.returncode == 124
                     else "acceptance_checks_failed" if result.returncode == 0
                     else "process_failed"
                 )
-                record.update(status="failed", termination_reason=reason)
+                record.update(status="failed", termination_reason=reason, finished_at=now())
             record["updated_at"] = now()
             state["updated_at"] = now()
             save_state(state_path, state)
