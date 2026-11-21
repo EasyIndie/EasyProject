@@ -150,7 +150,7 @@ def prepare_worktree(repo: Path, runs_dir: Path, task_id: str,
     record["base_commit"] = base_commit
     return path
 
-\n
+
 def collect_change_evidence(repo: Path, base_commit: str, task_id: str,
                             runs_dir: Path, persist: bool = True) -> dict[str, Any]:
     """Capture a deterministic review snapshot without staging or committing files."""
