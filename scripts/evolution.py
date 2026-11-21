@@ -115,7 +115,7 @@ def write_run_inputs(run_dir: Path, run_id: str, task: dict) -> tuple[Path, Path
         "protocol_version": "1.0",
         "tasks": [{
             "task_id": run_id,
-            "task_file": str(task_path.relative_to(ROOT)),
+            "task_file": str(task_path),
             "harness": task["preferred_harness"],
             "depends_on": [],
             "max_attempts": 2,
@@ -135,7 +135,7 @@ def invoke_candidate(candidate: Path, run_dir: Path, action: str | None = None) 
         "--runs-dir", str(run_dir / "orchestrator"), "--worktrees",
     ]
     if action:
-        command.extend(["--resume", action])
+        command.extend(["--resume", *action.split()])
     return subprocess.run(command, cwd=candidate, check=False).returncode
 
 
@@ -162,7 +162,7 @@ def start(args: argparse.Namespace) -> int:
     candidate.parent.mkdir(parents=True, exist_ok=True)
     git("worktree", "add", "-b", branch, str(candidate), base)
     try:
-        task = make_task(run_id, args.goal, args.harness, args.check or list(CHECK_IDS))
+        task = make_task(run_id, args.goal, args.harness, args.check or ["python-unittest"])
         write_run_inputs(run_dir, run_id, task)
     except Exception:
         # Preserve the candidate worktree for inspection if setup partially failed.
