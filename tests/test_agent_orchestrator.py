@@ -29,6 +29,43 @@ def item(task_id, deps=None):
 
 
 class OrchestratorTests(unittest.TestCase):
+    def test_allowlisted_acceptance_check_runs_and_persists_logs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            (workspace / "tests").mkdir(parents=True)
+            (workspace / "tests" / "test_sample.py").write_text(
+                "import unittest\nclass SampleTests(unittest.TestCase):\n"
+                "    def test_ok(self): self.assertTrue(True)\n",
+                encoding="utf-8",
+            )
+            result = orchestrator.run_acceptance_checks(
+                ["python-unittest"], workspace, Path(tmp) / "runs", "task-a", 1
+            )
+            self.assertEqual(result["status"], "passed")
+            self.assertEqual(result["results"][0]["result"], "passed")
+            self.assertTrue(Path(result["results"][0]["stdout_path"]).is_file())
+            self.assertTrue(Path(result["results"][0]["stderr_path"]).is_file())
+
+    def test_failed_acceptance_check_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            (workspace / "tests").mkdir(parents=True)
+            (workspace / "tests" / "test_failure.py").write_text(
+                "import unittest\nclass FailureTests(unittest.TestCase):\n"
+                "    def test_fail(self): self.fail('expected failure')\n",
+                encoding="utf-8",
+            )
+            result = orchestrator.run_acceptance_checks(
+                ["python-unittest"], workspace, Path(tmp) / "runs", "task-a", 1
+            )
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["results"][0]["result"], "failed")
+            self.assertNotEqual(result["results"][0]["exit_code"], 0)
+
+    def test_unknown_acceptance_check_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "Unsupported acceptance check"):
+            orchestrator.acceptance_command("arbitrary-shell")
+
     def test_valid_dag(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "plan.json"
@@ -188,6 +225,12 @@ class OrchestratorTests(unittest.TestCase):
             self.assertEqual((root / "new.txt").read_text(encoding="utf-8"), "new file\\n")
             self.assertEqual(orchestrator.git_output(root, "status", "--porcelain=v1"), "")
             self.assertNotEqual(record["integration_commit"], record["base_commit"])
+            dependent_record = {"worktree": None, "base_commit": None}
+            dependent = orchestrator.prepare_worktree(
+                root, Path(tmp) / "dependent-runs", "dependent", dependent_record
+            )
+            self.assertEqual(dependent_record["base_commit"], orchestrator.git_output(root, "rev-parse", "HEAD"))
+            self.assertEqual((dependent / "file.txt").read_text(encoding="utf-8"), "agent change\\n")
 
     def test_integration_includes_agent_commits_and_later_untracked_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -253,6 +296,20 @@ class OrchestratorTests(unittest.TestCase):
             state = {"tasks": {"a": {"status": "pending"}}}
             with self.assertRaisesRegex(ValueError, "only awaiting_review"):
                 orchestrator.approve("a", state, state_path)
+
+    def test_failed_automated_checks_block_human_approval(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            handoff_path = Path(tmp) / "handoff.json"
+            handoff_path.write_text(json.dumps({"task_id": "a", "status": "partial"}))
+            state_path = Path(tmp) / "state.json"
+            state = {"updated_at": None, "tasks": {"a": {
+                "status": "awaiting_review",
+                "handoff": str(handoff_path),
+                "automated_checks": {"status": "failed", "results": []},
+            }}}
+            with self.assertRaisesRegex(ValueError, "acceptance checks failed"):
+                orchestrator.approve("a", state, state_path)
+            self.assertEqual(state["tasks"]["a"]["status"], "awaiting_review")
 
     def test_approval_marks_handoff_completed(self):
         with tempfile.TemporaryDirectory() as tmp:

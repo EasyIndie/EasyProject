@@ -12,7 +12,7 @@ This directory defines a harness-neutral interchange contract. It is a protocol 
 
 ## Protocol files
 
-- `schemas/task.schema.json`: task request envelope.
+- `schemas/task.schema.json`: task request envelope, including optional fixed-ID `acceptance_checks`.
 - `schemas/handoff.schema.json`: agent result and handoff envelope.
 - `examples/task.json`: minimal valid task example.
 - `adapters/README.md`: mapping guidance for supported harnesses.
@@ -23,7 +23,8 @@ This directory defines a harness-neutral interchange contract. It is a protocol 
 2. Adapter maps the envelope into the target harness's native invocation. It must not silently widen permissions.
 3. Agent reads repository instructions and performs the bounded task.
 4. Adapter/orchestrator captures a handoff with changed files, verification evidence, risks, and status.
-5. Orchestrator validates acceptance criteria and decides whether to retry, delegate, request approval, or finish.
+5. Orchestrator runs only the task's schema-allowlisted acceptance check IDs, captures their logs, and keeps natural-language criteria pending human review.
+6. Orchestrator decides whether to retry, delegate, request approval, or finish based on process outcome, automated checks, and human approval.
 
 ## Permission model
 
