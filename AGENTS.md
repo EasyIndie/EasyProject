@@ -8,6 +8,17 @@ This file is the canonical, tool-agnostic entry point for coding agents. Read it
 3. Inspect repository status, current branch, recent changes, and existing conventions before editing.
 4. Identify the task's risk and choose the smallest suitable workflow in `.ai/workflows/`.
 
+## Template self-evolution routing
+At session start, inspect `git remote -v` and determine whether this is the canonical `EasyIndie/EasyProject` template checkout.
+
+- If the origin is the canonical repository (HTTPS or SSH), read and follow [the local template maintenance and self-evolution playbook](.ai/runtime/evolution/AGENT-PLAYBOOK.md) before proposing or changing template code.
+- If this is a repository generated from the template, a fork, or another project, follow that project's own instructions and ordinary delivery workflow. Do not run the template's self-evolution runtime just because its files were copied into the project.
+- Never identify the canonical template from the directory name alone. If the remote is missing or ambiguous, ask before creating a self-evolution run.
+- In the canonical template checkout, keep the Stable Checkout clean and never use it as a coding workspace. Use the external Candidate and nested Agent Worktrees described by the playbook.
+- On a fresh local session, inspect existing Evolution runs and run the non-mutating preflight for the selected supported harness. Do not start a write-enabled task until the human's goal is clear.
+- Pi is currently read-only in the runtime and is not a supported `evolution.py doctor/start` harness. Do not bypass this restriction. Use Pi for planning/review and Codex or Claude Code for isolated implementation.
+- Never push, create a PR, merge, publish, deploy, or alter repository security settings without explicit human authorization.
+
 ## Execution contract
 - Restate the goal, constraints, expected outputs, and acceptance checks before substantial work.
 - Prefer small, reviewable changes. Do not refactor unrelated code.
@@ -31,7 +42,7 @@ This file is the canonical, tool-agnostic entry point for coding agents. Read it
 - Preserve user changes and never force-push shared branches.
 
 ## Task tracking and documentation
-- GitHub Issues/Projects are the task-status source of truth when enabled.
+- GitHub Issues and Projects are the task-status source of truth when enabled.
 - Use `tasks/` for durable plans, milestone definitions, research, and reports—not a duplicate Kanban.
 - Write or update a spec when behavior, interfaces, or acceptance criteria are non-trivial. Small docs/config fixes do not need a PRD.
 - Record durable architectural decisions as ADRs; avoid documentation churn for obvious implementation details.
