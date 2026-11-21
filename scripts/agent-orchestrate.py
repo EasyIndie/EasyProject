@@ -86,9 +86,10 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
     temp.replace(path)
 
 
-def initial_state(plan: dict[str, Any]) -> dict[str, Any]:
+def initial_state(plan: dict[str, Any], use_worktrees: bool = False) -> dict[str, Any]:
     return {
         "protocol_version": "1.0",
+        "worktrees_enabled": use_worktrees,
         "updated_at": now(),
         "tasks": {
             item["task_id"]: {
@@ -242,10 +243,12 @@ def main() -> int:
             state = json.loads(state_path.read_text(encoding="utf-8"))
             if set(state.get("tasks", {})) != {item["task_id"] for item in plan["tasks"]}:
                 raise ValueError("Existing journal does not match this plan's task IDs.")
+            if state.get("worktrees_enabled", False) != args.worktrees:
+                raise ValueError("Resume must use the same --worktrees setting as the original run.")
         else:
             if state_path.exists():
                 raise ValueError(f"Run journal already exists: {state_path}; use --resume or choose another --runs-dir.")
-            state = initial_state(plan)
+            state = initial_state(plan, args.worktrees)
             save_state(state_path, state)
         if args.approve:
             approve(args.approve, state, state_path)
