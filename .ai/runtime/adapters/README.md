@@ -37,7 +37,7 @@ Timeouts default to the task envelope's `timeout_minutes` and can be overridden 
 
 ## Harness notes
 
-- **Pi:** Uses print/JSON mode. Read-only tasks get the `read,grep,find,ls` allowlist; explicitly overridden write tasks (`--allow-unsandboxed-pi-write`) also get `edit,write,bash`. It preserves Pi's configured provider, model, and authentication. Run Pi write tasks only inside an isolated worktree.
+- **Pi:** Uses print/JSON mode. Read-only tasks get the `read,grep,find,ls` allowlist; explicitly overridden write tasks (`--allow-unsandboxed-pi-write`) also get `edit,write,bash`. It preserves Pi's configured provider, model, and authentication. The unsafe override may expose the host; an isolated Worktree is not a containment boundary.
 - **Codex:** Uses `codex exec --json`, with `read-only` or `workspace-write` sandbox and `on-request` approval. It preserves the user's existing Codex authentication and model configuration.
 - **Claude Code:** Uses `claude -p --output-format json`; read-only tasks use plan mode, while write tasks use default permission mode and preserve user-configured permission rules. Never add `--dangerously-skip-permissions` or bypass permission modes.
 
