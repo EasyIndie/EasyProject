@@ -46,6 +46,61 @@ class EvolutionContractTests(unittest.TestCase):
         self.assertFalse(run_dir.is_relative_to(evolution.ROOT))
         self.assertFalse(candidate.is_relative_to(evolution.ROOT))
 
+    def test_manifest_records_reproducible_baseline_without_credentials(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "runtime"
+            environment = {
+                "branch": "main",
+                "head": "abc123",
+                "python": "3.12.1",
+                "jsonschema": "4.25.1",
+                "harness_version": "codex 1.2.3",
+            }
+            path = evolution.write_manifest(
+                run_dir, "manifest-test", "Verify evidence", "codex",
+                ["python-unittest"], environment,
+            )
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["stable"]["base_sha"], "abc123")
+            self.assertEqual(manifest["candidate"]["branch"], "evolution/manifest-test")
+            self.assertFalse(manifest["credential_values_recorded"])
+            self.assertNotIn("api_key", json.dumps(manifest).lower())
+
+    def test_report_distinguishes_not_started_from_completed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "runtime"
+            run_dir.mkdir()
+            (run_dir / "manifest.json").write_text(
+                json.dumps({"run_id": "report-test"}), encoding="utf-8"
+            )
+            report = evolution.build_report(run_dir)
+            self.assertEqual(report["execution"]["status"], "not_started")
+            orchestrator_dir = run_dir / "orchestrator"
+            orchestrator_dir.mkdir()
+            (orchestrator_dir / "orchestrator-state.json").write_text(
+                json.dumps({
+                    "updated_at": "2026-11-21T00:00:00Z",
+                    "tasks": {
+                        "task-a": {
+                            "status": "awaiting_review",
+                            "attempts": 1,
+                            "automated_checks": {"status": "passed"},
+                            "handoff": None,
+                            "review_evidence": None,
+                        }
+                    },
+                }), encoding="utf-8"
+            )
+            report = evolution.build_report(run_dir)
+            self.assertEqual(report["execution"]["status"], "recorded")
+            self.assertEqual(report["execution"]["tasks"]["task-a"]["status"], "awaiting_review")
+            self.assertEqual(report["execution"]["tasks"]["task-a"]["automated_checks"], "passed")
+
+    def test_report_requires_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "manifest not found"):
+                evolution.build_report(Path(tmp))
+
     def test_plan_and_task_are_written_only_to_external_runtime_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp) / "runtime"
