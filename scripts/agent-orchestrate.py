@@ -352,6 +352,16 @@ def verify_change_evidence(repo: Path, record: dict[str, Any]) -> None:
 
 
 
+def resolve_task_path(task_file: str, runs_dir: Path) -> Path:
+    """Resolve a task file from the repository or this run's external data directory."""
+    candidate = Path(task_file)
+    task_path = (candidate if candidate.is_absolute() else ROOT / candidate).resolve()
+    allowed_roots = (ROOT.resolve(), runs_dir.resolve())
+    if not any(task_path.is_relative_to(root) for root in allowed_roots):
+        raise ValueError("task_file must stay inside the repository or the configured runs directory.")
+    return task_path
+
+
 def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_worktrees: bool) -> int:
     by_id = {item["task_id"]: item for item in plan["tasks"]}
     state_path = runs_dir / "orchestrator-state.json"
@@ -373,9 +383,10 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                 continue
             if any(status != "completed" for status in dependency_states):
                 continue
-            task_path = (ROOT / item["task_file"]).resolve()
-            if not task_path.is_relative_to(ROOT):
-                raise ValueError(f"{task_id}: task_file must stay inside the repository.")
+            try:
+                task_path = resolve_task_path(item["task_file"], runs_dir)
+            except ValueError as exc:
+                raise ValueError(f"{task_id}: {exc}") from exc
             attempt = record["attempts"] + 1
             task_output = runs_dir / task_id / f"attempt-{attempt}.handoff.json"
             task_output.parent.mkdir(parents=True, exist_ok=True)
