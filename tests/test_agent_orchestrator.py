@@ -66,6 +66,19 @@ class OrchestratorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported acceptance check"):
             orchestrator.acceptance_command("arbitrary-shell")
 
+    def test_cancel_request_only_targets_the_active_attempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp) / "runs"
+            state = {"tasks": {"task-a": {"status": "running", "attempts": 2}}}
+            marker = orchestrator.request_cancel("task-a", state, runs)
+            payload = json.loads(marker.read_text(encoding="utf-8"))
+            self.assertEqual(payload["task_id"], "task-a")
+            self.assertEqual(payload["attempt"], 2)
+            self.assertTrue(marker.name.endswith("cancel-attempt-2.request"))
+            state["tasks"]["task-a"]["status"] = "awaiting_review"
+            with self.assertRaisesRegex(ValueError, "only running tasks"):
+                orchestrator.request_cancel("task-a", state, runs)
+
     def test_valid_dag(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "plan.json"
