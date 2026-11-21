@@ -98,6 +98,36 @@ block dependent tasks. A crash while a task
 is marked `running` requires human inspection before manually reconciling the
 journal—automatic replay could duplicate partial edits.
 
+## Acceptance checks
+
+Task Envelopes may optionally include `acceptance_checks`. These are IDs, not
+shell strings or arbitrary argument arrays. The schema accepts only this fixed
+allowlist:
+
+| ID | Executed command |
+| --- | --- |
+| `python-unittest` | Current Python interpreter, unittest discovery in `tests/` |
+| `pytest` | `pytest` |
+| `swift-test` | `swift test` |
+| `cargo-test` | `cargo test` |
+| `npm-test` | `npm test` |
+| `go-test` | `go test ./...` |
+| `repo-validation` | `bash scripts/validate-repo.sh` |
+
+The orchestrator invokes these as argument arrays with `shell=False`; the task
+cannot provide a custom executable, shell fragment, or arguments. Each check
+has a 15-minute timeout. stdout/stderr are saved under
+`<runs-dir>/<task-id>/checks/attempt-N/` and summarized in the review evidence
+and run journal. A missing executable, timeout, or non-zero exit fails the
+check set and prevents approval; the task becomes retryable while attempts
+remain. When no checks are configured, the evidence explicitly says
+`not_configured` and still requires human review.
+
+These are allowlisted launch commands, not a sandbox: project test code and
+build scripts execute with the local user's permissions. Configure checks only
+for repositories whose code and test scripts you trust. Passing automated
+checks does not certify natural-language acceptance criteria.
+
 ## Isolated worktrees
 
 ```bash
