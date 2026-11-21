@@ -150,6 +150,67 @@ def prepare_worktree(repo: Path, runs_dir: Path, task_id: str,
     record["base_commit"] = base_commit
     return path
 
+\n
+def collect_change_evidence(repo: Path, base_commit: str, task_id: str,
+                            runs_dir: Path) -> dict[str, Any]:
+    """Capture a deterministic review snapshot without staging or committing files."""
+    status = git_output(repo, "status", "--porcelain=v1", "--untracked-files=all")
+    changed = git_output(repo, "diff", "--name-only", base_commit).splitlines()
+    untracked = git_output(repo, "ls-files", "--others", "--exclude-standard").splitlines()
+    changed_files = sorted(set(changed + untracked))
+    diff_check = subprocess.run(
+        ["git", "diff", "--check", base_commit], cwd=repo,
+        text=True, capture_output=True, check=False,
+    )
+    diff = git_output(repo, "diff", "--binary", base_commit)
+    stat = git_output(repo, "diff", "--stat", base_commit)
+    fingerprint = hashlib.sha256(
+        (status + "\\0" + diff + "\\0" + "\\n".join(untracked)).encode("utf-8")
+    ).hexdigest()
+    evidence_dir = runs_dir / task_id
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    diff_path = evidence_dir / "review.diff"
+    diff_path.write_text(diff, encoding="utf-8")
+    evidence = {
+        "protocol_version": "1.0",
+        "task_id": task_id,
+        "base_commit": base_commit,
+        "captured_at": now(),
+        "changed_files": changed_files,
+        "diff_stat": stat,
+        "diff_check": {
+            "result": "passed" if diff_check.returncode == 0 else "failed",
+            "output": diff_check.stdout + diff_check.stderr,
+        },
+        "fingerprint": fingerprint,
+        "diff_path": str(diff_path),
+        "acceptance": {
+            "status": "pending_human_review",
+            "criteria_source": "Task Envelope acceptance_criteria",
+            "note": "Natural-language criteria are not auto-certified by this evidence collector.",
+        },
+    }
+    evidence_path = evidence_dir / "review-evidence.json"
+    evidence_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+    evidence["evidence_path"] = str(evidence_path)
+    return evidence
+
+
+def verify_change_evidence(repo: Path, record: dict[str, Any]) -> None:
+    evidence_path = record.get("review_evidence")
+    if not evidence_path or not Path(evidence_path).is_file():
+        raise ValueError("Review evidence is missing; rerun the evidence capture before approval.")
+    evidence = json.loads(Path(evidence_path).read_text(encoding="utf-8"))
+    current = collect_change_evidence(
+        repo, evidence["base_commit"], evidence["task_id"],
+        Path(evidence_path).parent.parent,
+    )
+    if current["fingerprint"] != evidence.get("fingerprint"):
+        raise ValueError("Workspace changed after review evidence was captured; inspect and recapture before approval.")
+    if evidence.get("diff_check", {}).get("result") != "passed":
+        raise ValueError("git diff --check failed; fix whitespace errors before approval.")
+
+
 
 def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_worktrees: bool) -> int:
     by_id = {item["task_id"]: item for item in plan["tasks"]}
@@ -190,6 +251,9 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             result = subprocess.run(command, cwd=ROOT, check=False)
             record["last_exit_code"] = result.returncode
             record["handoff"] = str(task_output)
+            if use_worktrees and record.get("base_commit"):
+                evidence = collect_change_evidence(workspace, record["base_commit"], task_id, runs_dir)
+                record["review_evidence"] = evidence["evidence_path"]
             if result.returncode == 0:
                 # The adapter intentionally emits partial; only explicit human
                 # approval may transition this task to completed.
@@ -219,8 +283,12 @@ def approve(task_id: str, state: dict[str, Any], state_path: Path) -> None:
     if not handoff_path.is_file():
         raise ValueError(f"Handoff file is missing: {handoff_path}")
     handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+    if handoff.get("task_id") != task_id:
+        raise ValueError("Handoff task_id does not match the requested task.")
     if handoff.get("status") == "failed":
         raise ValueError("A failed handoff cannot be approved.")
+    if record.get("worktree"):
+        verify_change_evidence(Path(record["worktree"]), record)
     record.update(status="completed", approved_at=now(), updated_at=now())
     state["updated_at"] = now()
     save_state(state_path, state)
