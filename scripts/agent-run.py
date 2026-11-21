@@ -185,7 +185,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     cancel_file = args.cancel_file.resolve() if args.cancel_file else None
-        exit_code, stdout, stderr, termination = run_harness(
+    exit_code, stdout, stderr, termination = run_harness(
         command, workspace, timeout * 60, cancel_file,
     )
     stdout_path, stderr_path = persist_raw_output(args.output, stdout, stderr)
@@ -229,7 +229,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         print(json.dumps(handoff, ensure_ascii=False, indent=2))
     return exit_code
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
