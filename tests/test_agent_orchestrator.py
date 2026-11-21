@@ -225,6 +225,12 @@ class OrchestratorTests(unittest.TestCase):
             self.assertEqual((root / "new.txt").read_text(encoding="utf-8"), "new file\\n")
             self.assertEqual(orchestrator.git_output(root, "status", "--porcelain=v1"), "")
             self.assertNotEqual(record["integration_commit"], record["base_commit"])
+            dependent_record = {"worktree": None, "base_commit": None}
+            dependent = orchestrator.prepare_worktree(
+                root, Path(tmp) / "dependent-runs", "dependent", dependent_record
+            )
+            self.assertEqual(dependent_record["base_commit"], orchestrator.git_output(root, "rev-parse", "HEAD"))
+            self.assertEqual((dependent / "file.txt").read_text(encoding="utf-8"), "agent change\\n")
 
     def test_integration_includes_agent_commits_and_later_untracked_files(self):
         with tempfile.TemporaryDirectory() as tmp:
