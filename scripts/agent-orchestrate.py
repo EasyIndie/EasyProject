@@ -417,15 +417,19 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                 # approval may transition this task to completed.
                 record["status"] = "awaiting_review"
             elif attempt < item.get("max_attempts", 1):
-                record.update(
-                    status="retryable",
-                    termination_reason="timeout" if result.returncode == 124 else "process_failed",
+                reason = (
+                    "timeout" if result.returncode == 124
+                    else "acceptance_checks_failed" if result.returncode == 0
+                    else "process_failed"
                 )
+                record.update(status="retryable", termination_reason=reason)
             else:
-                record.update(
-                    status="failed",
-                    termination_reason="timeout" if result.returncode == 124 else "process_failed",
+                reason = (
+                    "timeout" if result.returncode == 124
+                    else "acceptance_checks_failed" if result.returncode == 0
+                    else "process_failed"
                 )
+                record.update(status="failed", termination_reason=reason)
             record["updated_at"] = now()
             state["updated_at"] = now()
             save_state(state_path, state)
