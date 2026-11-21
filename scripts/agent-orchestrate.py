@@ -7,6 +7,7 @@ A task is not considered complete until a human explicitly approves its handoff.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -129,7 +130,8 @@ def prepare_worktree(repo: Path, runs_dir: Path, task_id: str,
             raise ValueError(task_id + ": recorded path is not a worktree of this repository.")
         return path
 
-    path = (repo.parent / ("." + repo.name + "-agent-worktrees") / runs_dir.name / task_id).resolve()
+    run_key = hashlib.sha256(str(runs_dir.resolve()).encode("utf-8")).hexdigest()[:12]
+    path = (repo.parent / ("." + repo.name + "-agent-worktrees") / run_key / task_id).resolve()
     if path.exists():
         raise ValueError(task_id + ": worktree path already exists but is not recorded: " + str(path))
     path.parent.mkdir(parents=True, exist_ok=True)
