@@ -58,7 +58,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Local tool state only; shared agent configuration remains versioned
+# Local tool state only; shared agent configuration remains versioned\n.agent-runs/
 .claude/settings.local.json
 .claude/*.local.json
 .codex/auth.json
