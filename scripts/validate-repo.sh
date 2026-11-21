@@ -13,6 +13,9 @@ required_files=(
   ".ai/workflows/README.md"
   "scripts/bootstrap.py"
   "tests/test_bootstrap.py"
+  "tests/test_agent_contract.py"
+  ".ai/runtime/schemas/task.schema.json"
+  ".ai/runtime/schemas/handoff.schema.json"
   ".markdownlint-cli2.jsonc"
 )
 
