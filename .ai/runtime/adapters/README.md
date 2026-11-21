@@ -1,38 +1,46 @@
-# Harness adapter guidance
+# Harness adapters
 
-Adapters translate the shared task/handoff envelopes into a harness's native interface. This repository currently defines contracts and mapping guidance only; it does not ship executable Pi, Codex, or Claude Code launchers.
+The repository provides a local CLI dispatcher at `scripts/agent-run.py`. It validates the shared task envelope, invokes an installed harness, preserves user-managed authentication/model configuration, and writes a normalized handoff draft plus raw logs.
 
-## Required adapter behavior
+## Usage
 
-1. Validate the task envelope before invoking a harness.
-2. Read the repository's `AGENTS.md` and applicable role contract.
-3. Pass objective, context, constraints, and acceptance criteria without dropping fields.
-4. Preserve the harness's existing login, API key, subscription, and model configuration. Never serialize credentials into task/handoff JSON, logs, artifacts, or Git.
-5. Enforce task permissions outside the model prompt where possible. Prompt text alone is not a security boundary.
-6. Capture exact commands and outcomes; distinguish skipped from passed.
-7. Emit a handoff conforming to `schemas/handoff.schema.json`, including unresolved risks.
+From the repository root:
 
-## Pi
+```bash
+python3 -m pip install jsonschema
+python3 scripts/agent-run.py --task .ai/runtime/examples/task.json --harness codex --output .agent-runs/example.json
+```
 
-- Map the task envelope into a Pi session/task prompt and the selected role instructions.
-- Use Pi's configured provider, model, extensions, and authentication as managed by the user.
-- Do not assume that tool availability implies permission; apply the task permission policy in the host runtime.
-- Capture the session's final response and tool/command evidence in the handoff.
+Supported harness names: `pi`, `codex`, and `claude-code`. The corresponding executable must already be installed and authenticated on PATH. The dispatcher never installs CLIs, logs in, reads credential stores, or changes model/provider settings.
 
-## Codex
+## Permission mapping
 
-- Map the task objective and constraints into a Codex CLI task invocation, with repository instructions loaded from `AGENTS.md`.
-- Use the user's existing Codex authentication and model selection. Do not inject API keys or rewrite Codex configuration.
-- Apply sandbox and approval settings from the host policy; do not silently select a less restrictive mode.
-- Record tests and command outcomes, not merely the final textual summary.
+| Capability | Pi | Codex CLI | Claude Code |
+|---|---|---|---|
+| Read-only | Built-in read tools allowlist | `read-only` sandbox | `plan` permission mode |
+| Repository write | Rejected: CLI allowlist is not an OS sandbox | `workspace-write` sandbox with `on-request` approval | `default` permission mode; relies on user's configured permission policy |
+| Network | Rejected | Rejected by this adapter | Rejected by this adapter |
+| Secrets | Rejected | Rejected | Rejected |
+| External side effects | Rejected | Rejected | Rejected |
 
-## Claude Code
+This is intentionally conservative. The adapter does not provide a universal security sandbox. Codex enforces workspace sandboxing at the OS boundary. Claude Code's default permission mode relies on the user's configured permissions and may prompt. Pi's read-only tool allowlist is a capability restriction, not a filesystem sandbox; write tasks are therefore rejected.
 
-- Map the task objective and constraints into a Claude Code task, loading `CLAUDE.md` which delegates to `AGENTS.md`.
-- Preserve the user's configured authentication, provider endpoint, and model. Never copy credentials into project files.
-- Apply tool permissions and approval settings through the harness/runtime configuration.
-- Record file changes, verification evidence, and unresolved risks in the handoff.
+## Output and review
 
-## Capability differences
+With `--output path.json`, the dispatcher writes:
+- `path.json`: a handoff draft conforming to the shared handoff schema.
+- `path.json.stdout.txt` and `path.json.stderr.txt`: raw harness output.
 
-Harnesses do not necessarily expose identical tools, context windows, approval controls, or structured output. An adapter must report unsupported capabilities and must not claim parity. If a permission cannot be enforced, fail closed for that capability or request human intervention.
+The handoff status is `partial` when the CLI exits successfully and `failed` otherwise. A zero exit code does not prove the task's acceptance criteria. The draft deliberately records verification as `not-run`; a human or orchestrator must inspect the diff, logs, and tests before changing the status to `completed`.
+
+Timeouts default to the task envelope's `timeout_minutes` and can be overridden with `--timeout`. A timeout exits with code 124. The dispatcher rejects network access, secret access, and external side effects until a separately enforceable policy integration exists.
+
+## Harness notes
+
+- **Pi:** Uses print/JSON mode and a read-only built-in tool allowlist. It preserves Pi's configured provider, model, and authentication.
+- **Codex:** Uses `codex exec --json`, with `read-only` or `workspace-write` sandbox and `on-request` approval. It preserves the user's existing Codex authentication and model configuration.
+- **Claude Code:** Uses `claude -p --output-format json`; read-only tasks use plan mode, while write tasks use default permission mode and preserve user-configured permission rules. Never add `--dangerously-skip-permissions` or bypass permission modes.
+
+## Limitations
+
+This first adapter version is a one-shot local process dispatcher, not a persistent session manager or multi-agent orchestrator. It does not parse provider-specific event streams into semantic tool traces, independently discover changed files, or evaluate acceptance criteria. Do not use it for unattended production deployment or other irreversible actions.
