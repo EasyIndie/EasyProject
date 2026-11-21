@@ -75,7 +75,7 @@ GitHub Issues and Projects are the default source of truth for task status when 
 
 ## CI contract
 
-The template CI must execute real checks. The baseline repository validator runs on every pull request and push to the default branch. Add language-specific lint, test, and build jobs only when the project has the corresponding toolchain and commands configured. A placeholder or commented-out command is not a passing check.
+The template CI must execute real checks. The baseline quality gate runs bootstrap end-to-end tests, shell linting, Markdown linting, and GitHub Actions workflow validation on every pull request and push to the default branch. Add language-specific lint, test, and build jobs only when the project has the corresponding toolchain and commands configured. A placeholder or commented-out command is not a passing check. Run the same baseline locally with the tools listed in `scripts/validate-repo.sh`.
 
 ## Customization
 
