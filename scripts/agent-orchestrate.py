@@ -99,7 +99,7 @@ def initial_state(plan: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], dry_run: bool) -> int:
+def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any]) -> int:
     by_id = {item["task_id"]: item for item in plan["tasks"]}
     state_path = runs_dir / "orchestrator-state.json"
     progress = True
@@ -120,12 +120,6 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], dry_ru
                 continue
             if any(status != "completed" for status in dependency_states):
                 continue
-            if dry_run:
-                print(f"READY {task_id}: {item['task_file']} [{item.get('harness', 'codex')}]")
-                record["status"] = "dry-run"
-                progress = True
-                continue
-
             task_path = (ROOT / item["task_file"]).resolve()
             if not task_path.is_relative_to(ROOT):
                 raise ValueError(f"{task_id}: task_file must stay inside the repository.")
@@ -191,6 +185,11 @@ def main() -> int:
         plan = load_plan(args.plan)
         runs_dir = args.runs_dir if args.runs_dir.is_absolute() else ROOT / args.runs_dir
         state_path = runs_dir / "orchestrator-state.json"
+        if args.dry_run:
+            for item in plan["tasks"]:
+                dependencies = ", ".join(item.get("depends_on", [])) or "none"
+                print(f"READY {item['task_id']}: {item['task_file']} [{item.get('harness', 'codex')}] depends_on={dependencies}")
+            return 0
         if args.resume:
             state = json.loads(state_path.read_text(encoding="utf-8"))
             if set(state.get("tasks", {})) != {item["task_id"] for item in plan["tasks"]}:
@@ -204,7 +203,7 @@ def main() -> int:
             approve(args.approve, state, state_path)
             print(f"{args.approve}: completed (human-approved)")
             return 0
-        return run_plan(plan, runs_dir, state, args.dry_run)
+        return run_plan(plan, runs_dir, state)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"agent-orchestrate: {exc}", file=sys.stderr)
         return 2
