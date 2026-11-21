@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easyindie.github.io/EasyProject/schemas/agent-task.schema.json",
+  "title": "Agent Task Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol_version",
+    "task_id",
+    "objective",
+    "acceptance_criteria",
+    "risk",
+    "permissions"
+  ],
+  "properties": {
+    "protocol_version": {
+      "const": "1.0"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "issue": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1
+    },
+    "context": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "risk": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_read",
+        "repository_write",
+        "network_access",
+        "secret_access",
+        "external_side_effects"
+      ],
+      "properties": {
+        "repository_read": {
+          "type": "boolean"
+        },
+        "repository_write": {
+          "type": "boolean"
+        },
+        "network_access": {
+          "type": "boolean"
+        },
+        "secret_access": {
+          "type": "boolean",
+          "default": false
+        },
+        "external_side_effects": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "preferred_role": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "preferred_harness": {
+      "enum": [
+        "pi",
+        "codex",
+        "claude-code",
+        "any"
+      ]
+    },
+    "model_hint": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Advisory only; the adapter must not override user-managed model configuration."
+    },
+    "timeout_minutes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1440,
+      "default": 30
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "correlation_id": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "default": {}
+    }
+  }
+}

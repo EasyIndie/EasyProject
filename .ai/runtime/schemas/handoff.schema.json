@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easyindie.github.io/EasyProject/schemas/agent-handoff.schema.json",
+  "title": "Agent Handoff Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "task_id", "status", "summary", "changed_files", "verification", "risks", "next_action"],
+  "properties": {
+    "protocol_version": { "const": "1.0" },
+    "task_id": { "type": "string", "minLength": 1 },
+    "agent_role": { "type": ["string", "null"] },
+    "harness": { "enum": ["pi", "codex", "claude-code", "other"] },
+    "status": { "enum": ["completed", "partial", "blocked", "failed"] },
+    "summary": { "type": "string" },
+    "changed_files": { "type": "array", "items": { "type": "string" } },
+    "decisions": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "verification": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "result"],
+        "properties": {
+          "command": { "type": "string" },
+          "result": { "enum": ["passed", "failed", "skipped", "not-run"] },
+          "evidence": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "risks": { "type": "array", "items": { "type": "string" } },
+    "unresolved_questions": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "next_action": { "type": "string" },
+    "pull_request_url": { "type": ["string", "null"], "format": "uri" },
+    "commit_sha": { "type": ["string", "null"] }
+  }
+}
