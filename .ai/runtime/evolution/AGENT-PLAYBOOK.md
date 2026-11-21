@@ -23,7 +23,7 @@ After the human clones the repository and opens an Agent in the repository root,
 5. Run the non-mutating preflight for the selected supported Evolution harness:
    ```bash
    python3 scripts/evolution.py doctor --harness codex
-   # or: --harness claude-code
+   # or: --harness claude-code, --harness pi
    ```
 6. If a prerequisite is missing, report the exact missing item and give the shortest safe install/configuration instruction. Do not install software, change shell profiles, or alter user-level configuration without permission.
 7. Do not start a write-enabled Agent merely because the checkout was opened. Start only after the human's task/goal is clear or the human has asked the Agent to discover and propose improvements.
@@ -55,13 +55,13 @@ This is Git worktree isolation, **not an OS security sandbox**. The task envelop
 
 | Harness | Current supported use in Evolution | Recommended responsibility |
 |---|---|---|
-| Pi Agent | Read-only adapter only; not accepted by `evolution.py doctor/start` | Planning, research, architecture review, diff review, test-result analysis |
+| Pi Agent | Supported Evolution harness; write tasks require the explicit `harness_options.pi_unsandboxed_write=true` acknowledgement | Implementation in the nested Agent worktree when no write-capable CLI with a real sandbox is installed; planning and review |
 | Codex CLI | Supported write-capable Evolution harness | Implementation in the nested Agent worktree |
 | Claude Code CLI | Supported write-capable Evolution harness | Implementation in the nested Agent worktree |
 
 Use the user's existing local authentication/model setup. Do not copy API keys, OAuth tokens, credential stores, or provider configuration into the repository, task envelope, manifest, logs, or worktree.
 
-Do not bypass Pi's read-only restriction or relabel a tool allowlist as a sandbox. A future Pi write adapter requires a separately reviewed OS-level isolation design before it can be enabled.
+Do not relabel a tool allowlist as an OS sandbox. Pi's `--tools` allowlist is a capability restriction, not a filesystem boundary: a Pi write task therefore requires the explicit Task Envelope acknowledgement `harness_options.pi_unsandboxed_write=true`. A self-evolution goal records it in the generated envelope, and an approved discovery artifact must already contain it or Evolution rejects the run. Network, secret, and external-side-effect denial remain policy constraints on this path rather than enforced boundaries, so prefer Codex (`workspace-write`) when the task needs a real boundary.
 
 ## 5. Start an isolated self-evolution run
 
@@ -83,9 +83,11 @@ python3 scripts/evolution.py start \
   --check python-unittest
 ```
 
-Use `--harness claude-code` when Claude Code is selected and available. Supported acceptance checks are `python-unittest`, `pytest`, `swift-test`, `cargo-test`, `npm-test`, `go-test`, and `repo-validation`. Choose only checks relevant to the actual change.
+Use `--harness claude-code` when Claude Code is selected and available. `--harness pi` works too, but Pi has no OS-level sandbox: the generated envelope records `harness_options.pi_unsandboxed_write=true` and the run is worktree-isolated rather than sandboxed.
 
-For discovery-led maintenance, run the read-only discovery command and inspect its evidence before promoting any candidate:
+Supported acceptance checks are `python-unittest`, `pytest`, `swift-test`, `cargo-test`, `npm-test`, `go-test`, and `repo-validation`. Choose only checks relevant to the actual change.
+
+For discovery-led maintenance, run the read-only discovery command and inspect its evidence before promoting any candidate. Test fixtures and markers inside quoted strings are deliberately not reported; treat that as a precision trade-off, not as proof of a clean backlog:
 
 ```bash
 python3 scripts/agent-discover.py --output ../easyproject-discovery.json
