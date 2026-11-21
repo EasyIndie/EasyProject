@@ -42,6 +42,8 @@ IDs, self-dependencies, and cycles before executing anything.
 python3 scripts/agent-orchestrate.py --plan .ai/runtime/examples/plan.json --dry-run --worktrees
 python3 scripts/agent-orchestrate.py --plan .ai/runtime/examples/plan.json
 python3 scripts/agent-orchestrate.py --plan .ai/runtime/examples/plan.json --resume --worktrees
+# From another terminal, request cancellation of a running task:
+python3 scripts/agent-orchestrate.py --plan .ai/runtime/examples/plan.json --resume --worktrees --cancel docs
 ```
 
 The default journal is `.agent-runs/orchestrator/orchestrator-state.json`. Add `--worktrees` to run each task in its own detached worktree. Worktrees are created beside the repository under `.<repo-name>-agent-worktrees/` so they cannot be nested inside the primary checkout.
@@ -97,6 +99,32 @@ Failed process executions are retried up to `max_attempts`; exhausted failures
 block dependent tasks. A crash while a task
 is marked `running` requires human inspection before manually reconciling the
 journal—automatic replay could duplicate partial edits.
+
+## Cancellation and timeouts
+
+Use `--cancel TASK_ID` from a second terminal while the orchestrator is
+running. It writes an attempt-scoped request marker; the active runner polls
+that marker and terminates the harness process group. The same mechanism is
+checked while allowlisted acceptance checks are running. Cancellation returns
+exit code 130, records the task as `cancelled`, and does not automatically
+retry it; dependent tasks become `blocked`. The cancel command reports that a
+request was written, not that termination has already completed—check the run
+journal for the final status. Supply the same `--worktrees` mode and
+`--runs-dir` as the original run.
+
+Task `timeout_minutes` controls the harness runtime. On timeout, the runner
+terminates the process group (POSIX) or attempts process-tree termination on
+Windows, saves captured stdout/stderr, and returns exit code 124. The
+orchestrator marks the task retryable while attempts remain; exhausted tasks
+become `failed` and block dependents. Each acceptance check has its own
+15-minute timeout and uses the same cancellation marker. Worktrees and logs are
+retained after cancellation or timeout for inspection; cleanup is deliberately
+manual so partial work is not silently discarded.
+
+If the orchestrator itself crashes or the machine is powered off, a journal
+left in `running` is not proof that the child process is still alive. Inspect
+the process list and worktree before restarting or reconciling the journal;
+never blindly replay a possibly partially executed task.
 
 ## Acceptance checks
 
@@ -163,4 +191,4 @@ so it can build on the approved predecessor commit.
 - Non-worktree tasks retain the simpler approval-to-completed transition.
 - Integration is local-only: no push, remote PR, merge, deployment, or publication.
 - The journal is a local recovery aid, not a distributed lock or tamper-proof audit log.
-- Concurrent scheduling, cancellation, and richer event-stream parsing are deferred to later milestones.
+- Concurrent scheduling and richer event-stream parsing are deferred to later milestones. Cancellation is cooperative through an attempt-scoped marker and requires the active runner to remain alive to observe it.
