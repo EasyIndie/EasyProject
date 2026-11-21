@@ -45,8 +45,8 @@ class AgentDiscoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self.make_repo(root)
-            (root / "notes.md").write_text("TODO follow up\n", encoding="utf-8")
-            subprocess.run(["git", "-C", str(root), "add", "notes.md"], check=True)
+            (root / "sample.py").write_text("# TODO follow up\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "sample.py"], check=True)
             one = discovery.discover(root)
             two = discovery.discover(root)
             self.assertEqual(one["candidates"], two["candidates"])
@@ -55,12 +55,24 @@ class AgentDiscoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self.make_repo(root)
-            (root / "binary.dat").write_bytes(b"TODO\0FIXME")
-            (root / "large.txt").write_bytes(b"x" * (discovery.MAX_FILE_BYTES + 1))
-            subprocess.run(["git", "-C", str(root), "add", "binary.dat", "large.txt"], check=True)
+            (root / "binary.py").write_bytes(b"TODO\0FIXME")
+            (root / "large.py").write_bytes(b"x" * (discovery.MAX_FILE_BYTES + 1))
+            subprocess.run(["git", "-C", str(root), "add", "binary.py", "large.py"], check=True)
             report = discovery.discover(root)
             self.assertEqual(report["candidate_count"], 0)
             self.assertEqual(report["skipped_files"], 2)
+
+    def test_ignores_documentation_examples(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.make_repo(root)
+            (root / "guide.md").write_text("TODO in a documentation example\n", encoding="utf-8")
+            (root / "sample.py").write_text("# TODO in source\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "guide.md", "sample.py"], check=True)
+            report = discovery.discover(root)
+            self.assertEqual(report["candidate_count"], 1)
+            self.assertEqual(report["candidates"][0]["evidence"]["path"], "sample.py")
+            self.assertEqual(report["skipped_files"], 1)
 
     def test_rejects_non_repository_root(self):
         with tempfile.TemporaryDirectory() as tmp:
