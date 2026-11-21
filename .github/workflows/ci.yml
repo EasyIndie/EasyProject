@@ -71,4 +71,6 @@ jobs:
           sudo install "$GITLEAKS_BIN" /usr/local/bin/gitleaks
 
       - name: Validate repository
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: bash scripts/validate-repo.sh
