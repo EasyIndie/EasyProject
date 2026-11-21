@@ -134,8 +134,10 @@ def invoke_candidate(candidate: Path, run_dir: Path, action: list[str] | None = 
         sys.executable, str(orchestrator), "--plan", str(plan),
         "--runs-dir", str(run_dir / "orchestrator"), "--worktrees",
     ]
+    if resume:
+        command.append("--resume")
     if action:
-        command.extend(["--resume", *action.split()])
+        command.extend(action)
     return subprocess.run(command, cwd=candidate, check=False).returncode
 
 
@@ -187,11 +189,11 @@ def continue_run(args: argparse.Namespace) -> int:
                          ensure_ascii=False, indent=2))
         return 0
     if args.action == "resume":
-        return invoke_candidate(candidate, run_dir)
-    if args.action in {"approve", "integrate"}:
+        return invoke_candidate(candidate, run_dir, resume=True)
+    if args.action in {"approve", "integrate", "cancel"}:
         task_id = args.id
-        flag = "--approve" if args.action == "approve" else "--integrate"
-        return invoke_candidate(candidate, run_dir, f"{flag} {task_id}")
+        flag = {"approve": "--approve", "integrate": "--integrate", "cancel": "--cancel"}[args.action]
+        return invoke_candidate(candidate, run_dir, action=[flag, task_id], resume=True)
     raise ValueError(f"unsupported action: {args.action}")
 
 
