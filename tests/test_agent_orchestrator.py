@@ -78,6 +78,16 @@ class OrchestratorTests(unittest.TestCase):
             self.assertEqual(code, 130)
             self.assertEqual(reason, "cancelled")
 
+    def test_cancelled_dependency_blocks_downstream_task(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp) / "runs"
+            state = orchestrator.initial_state(plan([item("a"), item("b", ["a"])]), use_worktrees=True)
+            state["tasks"]["a"]["status"] = "cancelled"
+            result = orchestrator.run_plan(plan([item("a"), item("b", ["a"])]), runs, state, True)
+            self.assertEqual(result, 0)
+            self.assertEqual(state["tasks"]["b"]["status"], "blocked")
+            self.assertTrue((runs / "orchestrator-state.json").is_file())
+
     def test_cancel_request_only_targets_the_active_attempt(self):
         with tempfile.TemporaryDirectory() as tmp:
             runs = Path(tmp) / "runs"
