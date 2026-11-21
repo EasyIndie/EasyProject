@@ -16,7 +16,7 @@ At session start, inspect `git remote -v` and determine whether this is the cano
 - Never identify the canonical template from the directory name alone. If the remote is missing or ambiguous, ask before creating a self-evolution run.
 - In the canonical template checkout, keep the Stable Checkout clean and never use it as a coding workspace. Use the external Candidate and nested Agent Worktrees described by the playbook.
 - On a fresh local session, inspect existing Evolution runs and run the non-mutating preflight for the selected supported harness. Do not start a write-enabled task until the human's goal is clear.
-- Pi is a supported Evolution harness, but it has no OS-level sandbox. Pi write tasks require the explicit `harness_options.pi_unsandboxed_write=true` acknowledgement; never grant it implicitly, and prefer Codex when a real isolation boundary is required.
+- Pi has no OS-level sandbox. Pi Evolution write tasks are disabled by default; only a human invoking `evolution.py start --allow-unsandboxed-pi-write` can enable the unsafe override. This is not a security boundary; prefer Codex or an externally enforced sandbox.
 - Never push, create a PR, merge, publish, deploy, or alter repository security settings without explicit human authorization.
 
 ## Execution contract
