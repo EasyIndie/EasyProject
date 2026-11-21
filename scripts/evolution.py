@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Run a self-evolution task in a candidate EasyProject worktree.
-
-The stable checkout only creates and controls the candidate. Agent execution,
-approval, and integration happen inside the candidate checkout using that
-candidate's own runtime. This is orchestration, not an OS security sandbox.
-"""
+"""Run a self-evolution task with all mutable run data outside the repository."""
 from __future__ import annotations
 
 import argparse
@@ -19,9 +14,7 @@ from typing import Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 HARNESS_BINARIES = {"codex": "codex", "claude-code": "claude"}
-CHECK_IDS = (
-    "python-unittest", "repo-validation",
-)
+CHECK_IDS = ("python-unittest", "repo-validation")
 
 
 def git(*args: str, cwd: Path = ROOT) -> str:
@@ -40,11 +33,13 @@ def validate_run_id(value: str) -> str:
 
 
 def candidate_paths(run_id: str) -> tuple[Path, str, Path]:
+    """Return candidate worktree, branch, and external mutable runtime directory."""
     validate_run_id(run_id)
-    parent = ROOT.parent / f".{ROOT.name}-evolution"
-    candidate = parent / run_id
+    run_root = ROOT.parent / f".{ROOT.name}-evolution" / run_id
+    candidate = run_root / "candidate"
     branch = f"evolution/{run_id}"
-    return candidate, branch, candidate / ".agent-runs" / "evolution" / run_id
+    run_dir = run_root / "runtime"
+    return candidate, branch, run_dir
 
 
 def make_task(run_id: str, goal: str, harness: str,
@@ -64,13 +59,11 @@ def make_task(run_id: str, goal: str, harness: str,
             "This is a self-evolution task for EasyProject.",
             "Read AGENTS.md and the relevant .ai/runtime documentation.",
             "The candidate checkout is isolated from the stable checkout.",
+            "All mutable task inputs, logs, journals, and evidence live outside the repository.",
         ],
         "inputs": [
-            "AGENTS.md",
-            ".ai/runtime/",
-            "scripts/agent-orchestrate.py",
-            "scripts/agent-run.py",
-            "tests/",
+            "AGENTS.md", ".ai/runtime/", "scripts/agent-orchestrate.py",
+            "scripts/agent-run.py", "tests/",
         ],
         "constraints": [
             "Make the smallest coherent change that satisfies the objective.",
@@ -87,10 +80,8 @@ def make_task(run_id: str, goal: str, harness: str,
         ],
         "risk": "medium",
         "permissions": {
-            "repository_read": True,
-            "repository_write": True,
-            "network_access": False,
-            "secret_access": False,
+            "repository_read": True, "repository_write": True,
+            "network_access": False, "secret_access": False,
             "external_side_effects": False,
         },
         "preferred_role": "developer",
@@ -98,8 +89,7 @@ def make_task(run_id: str, goal: str, harness: str,
         "model_hint": None,
         "timeout_minutes": 60,
         "metadata": {
-            "source": "self-evolution",
-            "correlation_id": run_id,
+            "source": "self-evolution", "correlation_id": run_id,
             "labels": ["easyproject", "self-evolution"],
         },
         "acceptance_checks": acceptance,
@@ -114,22 +104,20 @@ def write_run_inputs(run_dir: Path, run_id: str, task: dict) -> tuple[Path, Path
     plan = {
         "protocol_version": "1.0",
         "tasks": [{
-            "task_id": run_id,
-            "task_file": str(task_path),
-            "harness": task["preferred_harness"],
-            "depends_on": [],
-            "max_attempts": 2,
+            "task_id": run_id, "task_file": str(task_path),
+            "harness": task["preferred_harness"], "depends_on": [], "max_attempts": 2,
         }],
     }
     plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return task_path, plan_path
 
 
-def invoke_candidate(candidate: Path, run_dir: Path, action: list[str] | None = None, resume: bool = False) -> int:
+def invoke_candidate(candidate: Path, run_dir: Path,
+                     action: list[str] | None = None, resume: bool = False) -> int:
     orchestrator = candidate / "scripts" / "agent-orchestrate.py"
     plan = run_dir / "plan.json"
     if not orchestrator.is_file() or not plan.is_file():
-        raise ValueError("candidate runtime or evolution plan is missing")
+        raise ValueError("candidate runtime or external evolution plan is missing")
     command = [
         sys.executable, str(orchestrator), "--plan", str(plan),
         "--runs-dir", str(run_dir / "orchestrator"), "--worktrees",
@@ -155,22 +143,24 @@ def start(args: argparse.Namespace) -> int:
         raise ValueError("install jsonschema in the active Python environment first") from exc
 
     candidate, branch, run_dir = candidate_paths(run_id)
-    if candidate.exists():
-        raise ValueError(f"candidate path already exists: {candidate}")
+    run_root = candidate.parent
+    if run_root.exists():
+        raise ValueError(f"evolution run directory already exists: {run_root}")
     if git("branch", "--list", branch):
         raise ValueError(f"candidate branch already exists: {branch}")
 
     base = git("rev-parse", "HEAD")
-    candidate.parent.mkdir(parents=True, exist_ok=True)
-    git("worktree", "add", "-b", branch, str(candidate), base)
+    run_root.mkdir(parents=True)
     try:
+        git("worktree", "add", "-b", branch, str(candidate), base)
         task = make_task(run_id, args.goal, args.harness, args.check or ["python-unittest"])
         write_run_inputs(run_dir, run_id, task)
     except Exception:
-        # Preserve the candidate worktree for inspection if setup partially failed.
+        # Keep partial state for diagnosis; never silently delete a worktree or evidence.
         raise
 
     print(f"Evolution candidate: {candidate}")
+    print(f"Evolution runtime data (outside repository): {run_dir}")
     print(f"Evolution branch: {branch}")
     print(f"Stable base: {base}")
     print("Starting the candidate's own orchestrator with isolated task worktrees.")
@@ -184,34 +174,30 @@ def continue_run(args: argparse.Namespace) -> int:
     if args.action == "status":
         state_path = run_dir / "orchestrator" / "orchestrator-state.json"
         if not state_path.is_file():
-            raise ValueError("evolution journal does not exist")
+            raise ValueError("evolution journal does not exist in the external runtime directory")
         print(json.dumps(json.loads(state_path.read_text(encoding="utf-8")),
                          ensure_ascii=False, indent=2))
         return 0
     if args.action == "resume":
         return invoke_candidate(candidate, run_dir, resume=True)
     if args.action in {"approve", "integrate", "cancel"}:
-        task_id = args.id
         flag = {"approve": "--approve", "integrate": "--integrate", "cancel": "--cancel"}[args.action]
-        return invoke_candidate(candidate, run_dir, action=[flag, task_id], resume=True)
+        return invoke_candidate(candidate, run_dir, action=[flag, args.id], resume=True)
     raise ValueError(f"unsupported action: {args.action}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
-
     start_parser = subparsers.add_parser("start", help="create a candidate worktree and run a real Agent")
     start_parser.add_argument("--id", required=True)
     start_parser.add_argument("--goal", required=True)
     start_parser.add_argument("--harness", choices=tuple(HARNESS_BINARIES), required=True)
     start_parser.add_argument("--check", choices=CHECK_IDS, action="append",
                               help="allowlisted acceptance check; may be repeated")
-
     action_parser = subparsers.add_parser("run", help="resume, inspect, approve, or integrate a candidate")
     action_parser.add_argument("--id", required=True)
     action_parser.add_argument("action", choices=("status", "resume", "approve", "integrate", "cancel"))
-
     args = parser.parse_args(argv)
     try:
         if args.command == "start":

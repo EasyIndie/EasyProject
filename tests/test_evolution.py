@@ -36,9 +36,19 @@ class EvolutionContractTests(unittest.TestCase):
                 "m35-test", "Add a regression test", "codex", ["arbitrary-shell"]
             )
 
-    def test_plan_references_task_inside_candidate_run_directory(self):
+    def test_candidate_and_runtime_data_are_siblings_outside_stable_checkout(self):
+        candidate, branch, run_dir = evolution.candidate_paths("isolation-test")
+        self.assertEqual(branch, "evolution/isolation-test")
+        self.assertEqual(candidate.parent, run_dir.parent)
+        self.assertEqual(candidate.name, "candidate")
+        self.assertEqual(run_dir.name, "runtime")
+        self.assertNotEqual(candidate, run_dir)
+        self.assertFalse(run_dir.is_relative_to(evolution.ROOT))
+        self.assertFalse(candidate.is_relative_to(evolution.ROOT))
+
+    def test_plan_and_task_are_written_only_to_external_runtime_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
-            run_dir = Path(tmp) / ".agent-runs" / "evolution" / "case"
+            run_dir = Path(tmp) / "runtime"
             task = evolution.make_task(
                 "case", "Add a regression test", "codex", ["python-unittest"]
             )
@@ -47,6 +57,7 @@ class EvolutionContractTests(unittest.TestCase):
             self.assertEqual(Path(plan["tasks"][0]["task_file"]), task_path)
             self.assertTrue(task_path.is_file())
             self.assertTrue(plan_path.is_file())
+            self.assertEqual(task_path.parent, run_dir)
 
 
 if __name__ == "__main__":

@@ -22,6 +22,9 @@ required_files=(
   "scripts/agent-run.py"
   ".ai/runtime/schemas/task.schema.json"
   ".ai/runtime/schemas/handoff.schema.json"
+  "scripts/evolution.py"
+  "scripts/check-template-cleanliness.py"
+  "tests/test_evolution.py"
   ".markdownlint-cli2.jsonc"
 )
 
@@ -42,17 +45,18 @@ done
 python3 - <<'PY'
 import ast
 from pathlib import Path
-ast.parse(Path("scripts/bootstrap.py").read_text(encoding="utf-8"))
-ast.parse(Path("tests/test_bootstrap.py").read_text(encoding="utf-8"))
-ast.parse(Path("scripts/agent-run.py").read_text(encoding="utf-8"))
-ast.parse(Path("tests/test_agent_runner.py").read_text(encoding="utf-8"))
-ast.parse(Path("scripts/agent-orchestrate.py").read_text(encoding="utf-8"))
-ast.parse(Path("tests/test_agent_orchestrator.py").read_text(encoding="utf-8"))
-ast.parse(Path("scripts/evolution.py").read_text(encoding="utf-8"))
-ast.parse(Path("tests/test_evolution.py").read_text(encoding="utf-8"))
+for name in (
+    "scripts/bootstrap.py", "tests/test_bootstrap.py",
+    "scripts/agent-run.py", "tests/test_agent_runner.py",
+    "scripts/agent-orchestrate.py", "tests/test_agent_orchestrator.py",
+    "scripts/evolution.py", "tests/test_evolution.py",
+    "scripts/check-template-cleanliness.py",
+):
+    ast.parse(Path(name).read_text(encoding="utf-8"))
 print("Python syntax: OK")
 PY
 
+python3 scripts/check-template-cleanliness.py
 python3 -m unittest discover --start-directory tests --pattern 'test_*.py' -v
 python3 scripts/bootstrap.py --help >/dev/null
 python3 scripts/bootstrap.py --yes --dry-run --name "CI Sample" --description "Bootstrap smoke test" >/dev/null

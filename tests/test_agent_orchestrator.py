@@ -108,6 +108,27 @@ class OrchestratorTests(unittest.TestCase):
             loaded = orchestrator.load_plan(path)
             self.assertEqual([task["task_id"] for task in loaded["tasks"]], ["a", "b"])
 
+    def test_task_file_may_live_in_configured_external_runs_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runs = root / "external" / "runs"
+            runs.mkdir(parents=True)
+            task = runs / "task.json"
+            task.write_text("{}", encoding="utf-8")
+            resolved = orchestrator.resolve_task_path(str(task), runs)
+            self.assertEqual(resolved, task.resolve())
+
+    def test_task_file_outside_repository_and_runs_directory_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runs = root / "runs"
+            outside = root / "untrusted" / "task.json"
+            runs.mkdir()
+            outside.parent.mkdir()
+            outside.write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "configured runs directory"):
+                orchestrator.resolve_task_path(str(outside), runs)
+
     def test_unknown_dependency_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "plan.json"
