@@ -147,6 +147,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "exit_code": completed.returncode
             }
         }
+        from jsonschema import Draft202012Validator
+        handoff_schema = json.loads(HANDOFF_SCHEMA.read_text(encoding="utf-8"))
+        Draft202012Validator(handoff_schema).validate(handoff)
         if args.output:
             args.output.write_text(json.dumps(handoff, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         else:
