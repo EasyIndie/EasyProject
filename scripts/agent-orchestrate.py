@@ -20,7 +20,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "scripts/agent-run.py"
-TERMINAL = {"completed", "failed", "blocked"}
+TERMINAL = {"completed", "failed", "blocked", "cancelled"}
 ACCEPTANCE_CHECK_TIMEOUT_SECONDS = 900
 
 
@@ -394,7 +394,7 @@ def request_cancel(task_id: str, state: dict[str, Any], runs_dir: Path) -> Path:
     marker = runs_dir / task_id / f"cancel-attempt-{attempt}.request"
     marker.parent.mkdir(parents=True, exist_ok=True)
     try:
-        marker.write_text(json.dumps({"task_id": task_id, "attempt": attempt, "requested_at": now()}) + "\\n", encoding="utf-8")
+        marker.write_text(json.dumps({"task_id": task_id, "attempt": attempt, "requested_at": now()}), encoding="utf-8")
     except OSError as exc:
         raise ValueError(f"Cannot create cancellation marker: {exc}") from exc
     return marker
