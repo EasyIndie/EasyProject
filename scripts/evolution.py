@@ -162,6 +162,8 @@ def make_task(run_id: str, goal: str, harness: str,
         raise ValueError(f"unsupported harness: {harness}")
     if not acceptance or any(item not in CHECK_IDS for item in acceptance):
         raise ValueError("allowlisted acceptance checks must include only: " + ", ".join(CHECK_IDS))
+    if len(acceptance) != len(set(acceptance)):
+        raise ValueError("acceptance checks must be unique")
     return {
         "protocol_version": "1.0",
         "task_id": run_id,
@@ -221,6 +223,8 @@ def load_approved_task(task_file: Path, run_id: str, harness: str,
         raise ValueError("approved task is missing its approval note")
 
     evidence = wrapper.get("evidence_verified", {})
+    if evidence.get("candidate_id") != run_id:
+        raise ValueError("approved task candidate ID does not match the Evolution run ID")
     current_sha = git("rev-parse", "HEAD", cwd=root)
     if evidence.get("base_sha") != current_sha:
         raise ValueError("approved task base SHA is stale; rediscover and approve again")
@@ -326,7 +330,12 @@ def start(args: argparse.Namespace) -> int:
         checks = args.check if args.check is not None else (
             task.get("acceptance_checks") or ["python-unittest"]
         )
+        if len(checks) != len(set(checks)):
+            raise ValueError("acceptance checks must be unique")
         task["acceptance_checks"] = checks
+        from jsonschema import Draft202012Validator
+        schema = json.loads((ROOT / ".ai/runtime/schemas/task.schema.json").read_text(encoding="utf-8"))
+        Draft202012Validator(schema).validate(task)
         task_source = "human-approved-discovery"
     else:
         goal = args.goal
