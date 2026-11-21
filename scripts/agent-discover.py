@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import hashlib
 import json
 import re
@@ -22,6 +23,16 @@ SOURCE_SUFFIXES = {
 }
 MAX_FILE_BYTES = 1024 * 1024
 SELF_PATHS = {"scripts/agent-discover.py", "tests/test_agent_discover.py"}
+# Markers in test fixtures and string literals are data, not maintenance intent.
+TEST_FIXTURE_DIRECTORIES = {
+    "test", "tests", "__tests__", "testing",
+    "fixture", "fixtures", "testdata", "test_data",
+}
+TEST_FIXTURE_FILE_PATTERNS = (
+    "test_*", "*_test.*", "*.spec.*", "*.test.*", "conftest.py",
+)
+QUOTE_CHARACTERS = {"'", '"', "`"}
+TRIPLE_QUOTE_CHARACTERS = {"'", '"'}
 
 
 def git_files(root: Path) -> list[str]:
@@ -35,6 +46,70 @@ def git_files(root: Path) -> list[str]:
                          or "git ls-files failed")
     return sorted(item.decode("utf-8", errors="surrogateescape")
                   for item in result.stdout.split(b"\0") if item)
+
+
+def is_test_fixture_path(relative: str) -> bool:
+    parts = relative.split("/")
+    if any(part.lower() in TEST_FIXTURE_DIRECTORIES for part in parts[:-1]):
+        return True
+    name = parts[-1].lower()
+    return any(fnmatch.fnmatchcase(name, pattern)
+               for pattern in TEST_FIXTURE_FILE_PATTERNS)
+
+
+def find_closing_quote(line: str, start: int, quote: str) -> int | None:
+    position = start
+    while position < len(line):
+        if line[position] == "\\":
+            position += 2
+            continue
+        if line.startswith(quote, position):
+            return position
+        position += 1
+    return None
+
+
+def blank_region(characters: list[str], start: int, end: int) -> None:
+    for index in range(start, min(end, len(characters))):
+        characters[index] = " "
+
+
+def mask_string_literals(line: str, delimiter: str | None) -> tuple[str, str | None]:
+    """Blank quoted text so markers inside string data are not reported.
+
+    Unpaired quotes (for example an apostrophe in prose) are treated as
+    punctuation, so a comment such as ``# don't lose this TODO`` still reports
+    its marker. Multi-line triple-quoted strings keep masking subsequent lines.
+    """
+    characters = list(line)
+    position = 0
+    if delimiter is not None:
+        closing = line.find(delimiter)
+        if closing < 0:
+            blank_region(characters, 0, len(characters))
+            return "".join(characters), delimiter
+        blank_region(characters, 0, closing + len(delimiter))
+        position = closing + len(delimiter)
+    while position < len(line):
+        character = line[position]
+        if character not in QUOTE_CHARACTERS:
+            position += 1
+            continue
+        if (character in TRIPLE_QUOTE_CHARACTERS
+                and line.startswith(character * 3, position)):
+            quote = character * 3
+        else:
+            quote = character
+        closing = find_closing_quote(line, position + len(quote), quote)
+        if closing is not None:
+            blank_region(characters, position, closing + len(quote))
+            position = closing + len(quote)
+        elif len(quote) == 3:
+            blank_region(characters, position, len(characters))
+            return "".join(characters), quote
+        else:
+            position += 1
+    return "".join(characters), None
 
 
 def base_sha(root: Path) -> str | None:
@@ -128,7 +203,8 @@ def discover(root: Path, max_candidates: int = 50) -> dict[str, Any]:
     truncated = False
     for relative in git_files(root):
         path = root / relative
-        if relative in SELF_PATHS or path.suffix.lower() not in SOURCE_SUFFIXES or path.is_symlink():
+        if (relative in SELF_PATHS or is_test_fixture_path(relative)
+                or path.suffix.lower() not in SOURCE_SUFFIXES or path.is_symlink()):
             skipped_files += 1
             continue
         try:
@@ -149,8 +225,10 @@ def discover(root: Path, max_candidates: int = 50) -> dict[str, Any]:
             continue
         scanned_files += 1
         digest = hashlib.sha256(raw).hexdigest()
+        string_delimiter: str | None = None
         for line_number, line in enumerate(content.splitlines(), start=1):
-            for match in MARKER_PATTERN.finditer(line):
+            masked, string_delimiter = mask_string_literals(line, string_delimiter)
+            for match in MARKER_PATTERN.finditer(masked):
                 candidates.append(candidate_for(relative, line_number, match.group(1), digest))
                 if len(candidates) > max_candidates:
                     truncated = True

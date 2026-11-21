@@ -69,6 +69,13 @@ not push, create remote PRs, merge, deploy, or publish.
 - Only Git-tracked source/configuration files with supported extensions are scanned.
   Documentation examples, binary files, non-UTF-8 files, symlinks, and files
   larger than 1 MiB are skipped. The discovery script and its own tests are excluded.
+- Test files and fixture directories (`tests/`, `fixtures/`, `testdata/`, and
+  common test filename patterns) are skipped because their markers are usually
+  fixture data rather than maintenance intent.
+- Markers inside quoted string literals are ignored. This suppresses marker
+  vocabulary definitions, placeholder messages, and markers embedded in
+  fixture or message strings; comments and other unquoted text are still scanned.
+  An unpaired quote, such as an apostrophe in prose, does not hide a marker.
 - Raw source lines are not copied into discovery reports; evidence contains path,
   line, marker type, and file hash.
 - Candidate tasks default to no repository-write, network, secret, or
