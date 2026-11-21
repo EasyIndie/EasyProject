@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -20,6 +21,64 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "scripts/agent-run.py"
 TERMINAL = {"completed", "failed", "blocked"}
+ACCEPTANCE_CHECK_TIMEOUT_SECONDS = 900
+
+
+def acceptance_command(check_id: str) -> list[str]:
+    """Resolve a schema-allowlisted check ID to a fixed argv; never invoke a shell."""
+    commands = {
+        "python-unittest": [sys.executable, "-m", "unittest", "discover", "--start-directory", "tests", "--pattern", "test_*.py"],
+        "pytest": ["pytest"],
+        "swift-test": ["swift", "test"],
+        "cargo-test": ["cargo", "test"],
+        "npm-test": ["npm", "test"],
+        "go-test": ["go", "test", "./..."],
+        "repo-validation": ["bash", "scripts/validate-repo.sh"],
+    }
+    if check_id not in commands:
+        raise ValueError(f"Unsupported acceptance check: {check_id}")
+    return commands[check_id]
+
+
+def run_acceptance_checks(check_ids: list[str], workspace: Path,
+                          runs_dir: Path, task_id: str, attempt: int) -> dict[str, Any]:
+    """Run only fixed, allowlisted test commands and persist their outputs."""
+    if not check_ids:
+        return {"status": "not_configured", "results": []}
+    output_dir = runs_dir / task_id / "checks" / f"attempt-{attempt}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    results: list[dict[str, Any]] = []
+    for check_id in check_ids:
+        argv = acceptance_command(check_id)
+        stdout_path = output_dir / f"{check_id}.stdout.txt"
+        stderr_path = output_dir / f"{check_id}.stderr.txt"
+        if shutil.which(argv[0]) is None:
+            stdout, stderr, exit_code, result = "", f"Executable not found: {argv[0]}", None, "not_found"
+        else:
+            try:
+                completed = subprocess.run(
+                    argv, cwd=workspace, text=True, capture_output=True,
+                    timeout=ACCEPTANCE_CHECK_TIMEOUT_SECONDS, check=False,
+                )
+                stdout, stderr, exit_code = completed.stdout, completed.stderr, completed.returncode
+                result = "passed" if exit_code == 0 else "failed"
+            except subprocess.TimeoutExpired as exc:
+                stdout = exc.stdout.decode("utf-8", errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+                stderr = exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+                stderr += f"\\nTimed out after {ACCEPTANCE_CHECK_TIMEOUT_SECONDS} seconds."
+                exit_code, result = None, "timeout"
+        stdout_path.write_text(stdout, encoding="utf-8")
+        stderr_path.write_text(stderr, encoding="utf-8")
+        results.append({
+            "check_id": check_id,
+            "argv": argv,
+            "result": result,
+            "exit_code": exit_code,
+            "stdout_path": str(stdout_path),
+            "stderr_path": str(stderr_path),
+        })
+    status = "passed" if all(item["result"] == "passed" for item in results) else "failed"
+    return {"status": status, "results": results}
 
 
 def now() -> str:
@@ -152,7 +211,8 @@ def prepare_worktree(repo: Path, runs_dir: Path, task_id: str,
 
 
 def collect_change_evidence(repo: Path, base_commit: str, task_id: str,
-                            runs_dir: Path, persist: bool = True) -> dict[str, Any]:
+                            runs_dir: Path, persist: bool = True,
+                            automated_checks: dict[str, Any] | None = None) -> dict[str, Any]:
     """Capture a deterministic review snapshot without staging or committing files."""
     status = git_output(repo, "status", "--porcelain=v1", "--untracked-files=all")
     changed = git_output(repo, "diff", "--name-only", base_commit).splitlines()
@@ -207,7 +267,8 @@ def collect_change_evidence(repo: Path, base_commit: str, task_id: str,
         "acceptance": {
             "status": "pending_human_review",
             "criteria_source": "Task Envelope acceptance_criteria",
-            "note": "Natural-language criteria are not auto-certified by this evidence collector.",
+            "automated_checks": automated_checks or {"status": "not_configured", "results": []},
+            "note": "Automated checks supplement but do not certify natural-language acceptance criteria.",
         },
     }
     evidence_path = evidence_dir / "review-evidence.json"
@@ -230,6 +291,8 @@ def verify_change_evidence(repo: Path, record: dict[str, Any]) -> None:
         raise ValueError("Workspace changed after review evidence was captured; inspect and recapture before approval.")
     if evidence.get("diff_check", {}).get("result") != "passed":
         raise ValueError("git diff --check failed; fix whitespace errors before approval.")
+    if evidence.get("acceptance", {}).get("automated_checks", {}).get("status") == "failed":
+        raise ValueError("Configured acceptance checks failed; fix the task and rerun before approval.")
 
 
 
@@ -272,10 +335,21 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             result = subprocess.run(command, cwd=ROOT, check=False)
             record["last_exit_code"] = result.returncode
             record["handoff"] = str(task_output)
-            if use_worktrees and record.get("base_commit"):
-                evidence = collect_change_evidence(workspace, record["base_commit"], task_id, runs_dir)
-                record["review_evidence"] = evidence["evidence_path"]
+            task_envelope = json.loads(task_path.read_text(encoding="utf-8"))
+            automated_checks = {"status": "not_configured", "results": []}
             if result.returncode == 0:
+                automated_checks = run_acceptance_checks(
+                    task_envelope.get("acceptance_checks", []), workspace,
+                    runs_dir, task_id, attempt,
+                )
+            record["automated_checks"] = automated_checks
+            if use_worktrees and record.get("base_commit"):
+                evidence = collect_change_evidence(
+                    workspace, record["base_commit"], task_id, runs_dir,
+                    automated_checks=automated_checks,
+                )
+                record["review_evidence"] = evidence["evidence_path"]
+            if result.returncode == 0 and automated_checks["status"] != "failed":
                 # The adapter intentionally emits partial; only explicit human
                 # approval may transition this task to completed.
                 record["status"] = "awaiting_review"
@@ -288,8 +362,8 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             save_state(state_path, state)
             progress = True
             # Stop after one actual agent invocation: review/approval is a gate.
-            print(f"{task_id}: {record['status']} (exit={result.returncode}, attempt={attempt})")
-            return 1 if result.returncode else 0
+            print(f"{task_id}: {record['status']} (exit={result.returncode}, checks={automated_checks['status']}, attempt={attempt})")
+            return 1 if result.returncode or automated_checks["status"] == "failed" else 0
     save_state(state_path, state)
     return 0
 
@@ -308,6 +382,8 @@ def approve(task_id: str, state: dict[str, Any], state_path: Path) -> None:
         raise ValueError("Handoff task_id does not match the requested task.")
     if handoff.get("status") == "failed":
         raise ValueError("A failed handoff cannot be approved.")
+    if record.get("automated_checks", {}).get("status") == "failed":
+        raise ValueError("Configured acceptance checks failed; task cannot be approved.")
     if record.get("worktree"):
         verify_change_evidence(Path(record["worktree"]), record)
         record.update(status="approved", approved_at=now(), updated_at=now())
