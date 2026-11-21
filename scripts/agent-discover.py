@@ -14,6 +14,12 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 MARKER_PATTERN = re.compile(r"(?<![A-Za-z0-9_])(TODO|FIXME|HACK)(?![A-Za-z0-9_])")
+SOURCE_SUFFIXES = {
+    ".py", ".sh", ".bash", ".zsh", ".swift", ".rs", ".go", ".js", ".jsx",
+    ".ts", ".tsx", ".java", ".kt", ".kts", ".c", ".h", ".cc", ".cpp",
+    ".hpp", ".cs", ".rb", ".php", ".lua", ".dart", ".scala", ".sql",
+    ".yaml", ".yml", ".toml",
+}
 MAX_FILE_BYTES = 1024 * 1024
 SELF_PATHS = {"scripts/agent-discover.py", "tests/test_agent_discover.py"}
 
@@ -121,19 +127,19 @@ def discover(root: Path, max_candidates: int = 50) -> dict[str, Any]:
     skipped_files = 0
     truncated = False
     for relative in git_files(root):
-        if relative in SELF_PATHS:
-            skipped_files += 1
-            continue
         path = root / relative
-        if path.is_symlink():
+        if relative in SELF_PATHS or path.suffix.lower() not in SOURCE_SUFFIXES or path.is_symlink():
             skipped_files += 1
             continue
         try:
+            if path.stat().st_size > MAX_FILE_BYTES:
+                skipped_files += 1
+                continue
             raw = path.read_bytes()
         except OSError:
             skipped_files += 1
             continue
-        if len(raw) > MAX_FILE_BYTES or b"\0" in raw:
+        if b"\0" in raw:
             skipped_files += 1
             continue
         try:
