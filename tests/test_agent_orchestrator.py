@@ -291,6 +291,20 @@ class OrchestratorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "only awaiting_review"):
                 orchestrator.approve("a", state, state_path)
 
+    def test_failed_automated_checks_block_human_approval(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            handoff_path = Path(tmp) / "handoff.json"
+            handoff_path.write_text(json.dumps({"task_id": "a", "status": "partial"}))
+            state_path = Path(tmp) / "state.json"
+            state = {"updated_at": None, "tasks": {"a": {
+                "status": "awaiting_review",
+                "handoff": str(handoff_path),
+                "automated_checks": {"status": "failed", "results": []},
+            }}}
+            with self.assertRaisesRegex(ValueError, "acceptance checks failed"):
+                orchestrator.approve("a", state, state_path)
+            self.assertEqual(state["tasks"]["a"]["status"], "awaiting_review")
+
     def test_approval_marks_handoff_completed(self):
         with tempfile.TemporaryDirectory() as tmp:
             handoff_path = Path(tmp) / "handoff.json"
