@@ -223,13 +223,6 @@ def make_task(run_id: str, goal: str, harness: str,
         },
         "acceptance_checks": acceptance,
     }
-    if harness == "pi":
-        # Pi provides no OS sandbox; record the acknowledgement in the envelope.
-        task["harness_options"] = {"pi_unsandboxed_write": True}
-        task["constraints"].append(
-            "Pi has no OS-level sandbox: run only inside the isolated task worktree "
-            "and never use network, credentials, or external side effects."
-        )
     return task
 
 
@@ -295,10 +288,6 @@ def load_approved_task(task_file: Path, run_id: str, harness: str,
     )):
         raise ValueError("approved task cannot enable network, secrets, or external side effects")
     task["preferred_harness"] = harness
-    if harness == "pi" and not task.get("harness_options", {}).get("pi_unsandboxed_write"):
-        raise ValueError(
-            "approved Pi task must acknowledge harness_options.pi_unsandboxed_write=true"
-        )
     try:
         from jsonschema import Draft202012Validator
     except ImportError as exc:
@@ -378,6 +367,18 @@ def start(args: argparse.Namespace) -> int:
         task = make_task(run_id, goal, args.harness, checks)
         task_source = "manual-goal"
 
+    if args.harness == "pi":
+        if not args.allow_unsandboxed_pi_write:
+            raise ValueError(
+                "Pi Evolution writes are disabled by default because Pi has no OS-level sandbox. "
+                "Use --allow-unsandboxed-pi-write only after explicitly accepting this risk."
+            )
+        task["harness_options"] = {"pi_unsandboxed_write": True}
+        task["constraints"].append(
+            "This task uses explicitly approved unsandboxed Pi write access. "
+            "The Git Worktree is not a security boundary; do not treat host access as restricted."
+        )
+
     environment = preflight(args.harness)
     candidate, branch, run_dir = candidate_paths(run_id)
     run_root = candidate.parent
@@ -437,6 +438,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     source_group.add_argument("--approved-task", type=Path,
                               help="execute a write-enabled artifact from agent-task-approve.py")
     start_parser.add_argument("--harness", choices=tuple(HARNESS_BINARIES), required=True)
+    start_parser.add_argument(
+        "--allow-unsandboxed-pi-write", action="store_true",
+        help="Unsafe: explicitly allow Pi to write without an OS sandbox.",
+    )
     start_parser.add_argument("--check", choices=CHECK_IDS, action="append",
                               help="override task acceptance checks with allowlisted IDs")
     doctor_parser = subparsers.add_parser("doctor", help="check local prerequisites without starting an Agent")
