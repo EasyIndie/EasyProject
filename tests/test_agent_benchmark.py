@@ -70,7 +70,12 @@ class AgentBenchmarkTests(unittest.TestCase):
             }), encoding="utf-8")
             report = benchmark.build_benchmark(root)
             self.assertEqual(report["run_count"], 1)
-            self.assertEqual(report["metrics_by_harness"], {})
+            claude = report["metrics_by_harness"]["claude-code"]
+            self.assertEqual(claude["runs"], 1)
+            self.assertEqual(claude["attempted_tasks"], 0)
+            self.assertIsNone(claude["mean_duration_seconds"])
+            self.assertIsNone(claude["agent_success_rate"])
+            self.assertIsNone(claude["acceptance_pass_rate"])
 
 
 if __name__ == "__main__":
