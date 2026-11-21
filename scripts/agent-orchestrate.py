@@ -212,7 +212,7 @@ def collect_change_evidence(repo: Path, base_commit: str, task_id: str,
     }
     evidence_path = evidence_dir / "review-evidence.json"
     if persist:
-        evidence_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+        evidence_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     evidence["evidence_path"] = str(evidence_path)
     return evidence
 
