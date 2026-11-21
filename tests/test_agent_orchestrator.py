@@ -110,6 +110,46 @@ class OrchestratorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "recorded worktree is missing"):
                 orchestrator.prepare_worktree(root, Path(tmp) / "runs", "task-one", record)
 
+    def test_change_evidence_includes_tracked_and_untracked_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            root.mkdir()
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)
+            (root / "tracked.txt").write_text("before\\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "tracked.txt"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "initial"], check=True)
+            base = orchestrator.git_output(root, "rev-parse", "HEAD")
+            (root / "tracked.txt").write_text("after\\n", encoding="utf-8")
+            (root / "new.txt").write_text("new file\\n", encoding="utf-8")
+            evidence = orchestrator.collect_change_evidence(root, base, "task-a", Path(tmp) / "runs")
+            self.assertEqual(evidence["changed_files"], ["new.txt", "tracked.txt"])
+            self.assertTrue(Path(evidence["diff_path"]).is_file())
+            self.assertEqual(evidence["acceptance"]["status"], "pending_human_review")
+            self.assertEqual(evidence["diff_check"]["result"], "passed")
+
+    def test_approval_rejects_workspace_changed_after_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            root.mkdir()
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)
+            (root / "file.txt").write_text("before\\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "file.txt"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "initial"], check=True)
+            base = orchestrator.git_output(root, "rev-parse", "HEAD")
+            (root / "file.txt").write_text("reviewed\\n", encoding="utf-8")
+            runs = Path(tmp) / "runs"
+            evidence = orchestrator.collect_change_evidence(root, base, "a", runs)
+            record = {"review_evidence": evidence["evidence_path"]}
+            (root / "file.txt").write_text("changed after review\\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "changed after review"):
+                orchestrator.verify_change_evidence(root, record)
+            saved = json.loads(Path(evidence["evidence_path"]).read_text(encoding="utf-8"))
+            self.assertEqual(saved["fingerprint"], evidence["fingerprint"])
+
     def test_approval_requires_review_state_and_handoff(self):
         with tempfile.TemporaryDirectory() as tmp:
             state_path = Path(tmp) / "state.json"
@@ -120,7 +160,7 @@ class OrchestratorTests(unittest.TestCase):
     def test_approval_marks_handoff_completed(self):
         with tempfile.TemporaryDirectory() as tmp:
             handoff_path = Path(tmp) / "handoff.json"
-            handoff_path.write_text(json.dumps({"status": "partial"}))
+            handoff_path.write_text(json.dumps({"task_id": "a", "status": "partial"}))
             state_path = Path(tmp) / "state.json"
             state = {"updated_at": None, "tasks": {"a": {
                 "status": "awaiting_review", "handoff": str(handoff_path)}}}
