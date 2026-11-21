@@ -16,7 +16,13 @@ Requirements:
 - A configured and authenticated `codex` or `claude` CLI on `PATH`.
 - The selected Agent CLI must be permitted to write to its isolated workspace by its own local permission configuration.
 
-From the stable checkout:
+First run the non-mutating prerequisite check. It verifies the Git checkout, clean working tree, Python dependency, and CLI executable/version. It does not inspect or print credentials and does not prove that the CLI is authenticated:
+
+```bash
+python3 scripts/evolution.py doctor --harness codex
+```
+
+Then start a run:
 
 ```bash
 python3 scripts/evolution.py start \
@@ -25,6 +31,16 @@ python3 scripts/evolution.py start \
   --goal "Implement the next approved EasyProject self-evolution capability" \
   --check python-unittest
 ```
+
+The external runtime directory also contains `manifest.json`, which records the stable base SHA, branch, CLI version, Python/jsonschema versions, goal, and configured checks. It never records credential values.
+
+Print a concise report from the manifest and orchestrator journal at any time:
+
+```bash
+python3 scripts/evolution.py report --id m35-first-run
+```
+
+The report distinguishes a run that has not started from one with recorded execution state. A task in `awaiting_review` is not approved or integrated.
 
 The command creates this sibling directory structure (not inside the repository):
 
@@ -85,4 +101,6 @@ Run `python3 scripts/check-template-cleanliness.py` to ensure generated Evolutio
 - Agent CLIs and test/build scripts still run with the local user's OS permissions. Use a disposable VM/container with restricted credentials and network for stronger isolation.
 - Pi's current adapter is read-only and therefore is not offered as the self-evolution coding harness. It can still be used for planning or review outside this write path.
 - A successful CLI exit and passing automated checks produce `awaiting_review`, not automatic approval.
-- CI can test the runner's contracts, but a real Agent E2E run requires the user's locally installed and authenticated CLI. Never report a simulated test as a real Agent run.
+- `doctor` verifies the CLI executable and version, not account authentication or available quota. A real Agent E2E run requires the user's locally installed and authenticated CLI.
+- The manifest/report are execution metadata, not proof that the Agent's claims are correct. Inspect handoff, raw logs, diff, and review evidence before approval.
+- CI tests these contracts with deterministic fixtures; it does not claim to execute a real Agent. Never report a simulated test as a real Agent run.
