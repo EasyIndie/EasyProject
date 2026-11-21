@@ -15,7 +15,8 @@ SPEC.loader.exec_module(evolution)
 
 
 def wrapper_digest(artifact: Path) -> str:
-    return json.loads(artifact.read_text(encoding="utf-8"))["approval_sha256"]
+    wrapper = json.loads(artifact.read_text(encoding="utf-8"))
+    return evolution.compute_approval_digest(wrapper)
 
 
 class EvolutionContractTests(unittest.TestCase):
