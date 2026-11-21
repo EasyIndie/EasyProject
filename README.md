@@ -23,6 +23,7 @@
 | [`.ai/rules/`](.ai/rules/) | Shared engineering and safety rules |
 | [`.ai/agents/`](.ai/agents/) | Role contracts and handoff expectations |
 | [`.ai/workflows/`](.ai/workflows/) | Task-sized delivery workflows |
+| [`.ai/runtime/discovery/README.md`](.ai/runtime/discovery/README.md) | Evidence-based, review-only task discovery |
 
 ## Operating model
 
@@ -47,7 +48,7 @@ Do not force every change through a heavyweight PRD. Use the smallest amount of 
 .ai/
   agents/       role contracts
   context/      project facts and constraints
-  rules/        shared non-negotiable rules
+  rules/        shared engineering and safety rules
   workflows/    quick / feature / major delivery paths
   prompts/      reusable task prompts
   templates/    lightweight document templates
