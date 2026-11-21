@@ -7,6 +7,17 @@ EasyProject self-evolution uses two nested isolation boundaries:
 
 The stable checkout is never the Agent's write workspace. The candidate branch is not merged or pushed automatically. **All mutable run data is stored outside both Git worktrees**, so task envelopes, plans, journals, logs, and evidence cannot pollute the template or candidate source tree.
 
+## Evidence-based task discovery
+
+Before starting a self-evolution run, collect narrow, reviewable maintenance signals:
+
+```bash
+python3 scripts/agent-discover.py
+python3 scripts/agent-discover.py --max-candidates 25 --output ../easyproject-discovery.json
+```
+
+The discovery tool scans Git-tracked text files for explicit TODO/FIXME/HACK markers and emits Task Envelope candidates with source path, line, and file hash. It does not run Agents, modify files, create Issues, or access the network. Every candidate has repository-write, network, secret, and external-side-effect permissions disabled. A marker is only a signal—not a confirmed defect—and every candidate requires human review before any task is promoted for execution. See [the discovery contract](../discovery/README.md).
+
 ## Start a real evolution run
 
 Requirements:
@@ -77,43 +88,3 @@ git log -1 --oneline
 ```
 
 Review the complete candidate diff against the stable base. Push the candidate branch and create a PR only through a separately reviewed GitHub workflow. This tool never pushes, creates PRs, changes branch protection, merges, deploys, or publishes.
-
-## Agent benchmark
-
-Every run manifest and orchestrator journal can be aggregated into a local benchmark report:
-
-```bash
-python3 scripts/agent-benchmark.py
-python3 scripts/agent-benchmark.py --runs-root ../.EasyProject-evolution --output ../easyproject-agent-benchmark.json
-```
-
-The report groups results by harness and includes attempted tasks, agent-success rate, acceptance-check pass rate, total attempts, and mean recorded task duration. For this report, an agent success means the run reached `awaiting_review`, `approved`, or `completed`; it does not mean a human approved the change. Acceptance pass rate is calculated only from tasks with an explicit `passed` or `failed` check result.
-
-Token usage and estimated cost remain `null` because the current adapters do not provide a stable, normalized usage contract. Do not infer cost from raw CLI output. Compare harnesses only on equivalent tasks, base commits, checks, and model/configuration settings. A missing duration is left unavailable rather than fabricated.
-
-## Stable / candidate lifecycle
-
-- Stable checkout: creates the candidate, remains unchanged, and retains the known-good runtime.
-- Candidate checkout: runs the candidate version of the runtime.
-- Agent task worktree: receives code edits and automated acceptance checks.
-- External runtime directory: stores mutable task inputs, journal, logs, and evidence.
-- External task-worktree directory: stores nested Agent worktrees, adjacent to the candidate and runtime directories.
-- Human gate: review evidence, approve, then integrate into the candidate branch.
-- Promotion: human review and normal CI/PR policy are required before candidate code reaches `main`.
-
-The candidate and runtime directories are intentionally retained for inspection. Do not delete them until evidence has been reviewed and any needed artifacts have been preserved.
-
-## Template cleanliness and bootstrap verification
-
-Run `python3 scripts/check-template-cleanliness.py` to ensure generated Evolution runtime directories have not been committed. The repository validation workflow runs this check in a fresh CI checkout. Bootstrap dry-run and idempotency are covered by the bootstrap end-to-end tests.
-
-## Limitations
-
-- This is a local runner, not a hosted service or a security sandbox.
-- Git worktrees provide filesystem separation, not OS-level isolation.
-- Agent CLIs and test/build scripts still run with the local user's OS permissions. Use a disposable VM/container with restricted credentials and network for stronger isolation.
-- Pi's current adapter is read-only and therefore is not offered as the self-evolution coding harness. It can still be used for planning or review outside this write path.
-- A successful CLI exit and passing automated checks produce `awaiting_review`, not automatic approval.
-- `doctor` verifies the CLI executable and version, not account authentication or available quota. A real Agent E2E run requires the user's locally installed and authenticated CLI.
-- The manifest/report are execution metadata, not proof that the Agent's claims are correct. Inspect handoff, raw logs, diff, and review evidence before approval.
-- CI tests these contracts with deterministic fixtures; it does not claim to execute a real Agent. Never report a simulated test as a real Agent run.
