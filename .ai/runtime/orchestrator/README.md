@@ -41,7 +41,7 @@ IDs, self-dependencies, and cycles before executing anything.
 ```bash
 python3 scripts/agent-orchestrate.py --plan .ai/runtime/examples/plan.json --dry-run --worktrees
 python3 scripts/agent-orchestrate.py --plan .ai/runtime/examples/plan.json
-python3 scripts/agent-orchestrate.py --plan .ai/runtime/examples/plan.json --resume
+python3 scripts/agent-orchestrate.py --plan .ai/runtime/examples/plan.json --resume --worktrees
 ```
 
 The default journal is `.agent-runs/orchestrator/orchestrator-state.json`. Add `--worktrees` to run each task in its own detached worktree. Worktrees are created beside the repository under `.<repo-name>-agent-worktrees/` so they cannot be nested inside the primary checkout.
@@ -53,7 +53,7 @@ Only one agent process is invoked per command. A successful adapter exit produce
 diff, and acceptance criteria before approving:
 
 ```bash
-python3 scripts/agent-orchestrate.py --plan .ai/runtime/examples/plan.json --resume --approve docs
+python3 scripts/agent-orchestrate.py --plan .ai/runtime/examples/plan.json --resume --worktrees --approve docs
 python3 scripts/agent-orchestrate.py --plan .ai/runtime/examples/plan.json --resume
 ```
 
@@ -71,7 +71,8 @@ python3 scripts/agent-orchestrate.py --plan .ai/runtime/examples/plan.json --wor
 
 Each task gets a detached worktree created from the repository's current HEAD.
 Retries reuse that task's worktree; resume validates that the recorded directory
-still belongs to this repository. The runner receives an explicit `--cwd` and
+still belongs to this repository. The --worktrees flag must be repeated on every
+resume invocation; the journal rejects a mode mismatch. The runner receives an explicit `--cwd` and
 executes the selected harness inside that worktree while loading task/schema
 contracts from the template checkout.
 
