@@ -402,6 +402,77 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                 status="running", attempts=attempt, cancel_file=str(cancel_file),
                 started_at=now(), updated_at=now(),
             )
+            record.setdefault("first_started_at", record["started_at"])
+            save_state(state_path, state)
+            result = subprocess.run(command, cwd=ROOT, check=False)
+            record["last_exit_code"] = result.returncode
+            record["handoff"] = str(task_output)
+            task_envelope = json.loads(task_path.read_text(encoding="utf-8"))
+            automated_checks = {"status": "not_configured", "results": []}
+            if result.returncode == 0:
+                automated_checks = run_acceptance_checks(
+                    task_envelope.get("acceptance_checks", []), workspace,
+                    runs_dir, task_id, attempt, cancel_file,
+                )
+            record["automated_checks"] = automated_checks
+            if use_worktrees and record.get("base_commit"):
+                evidence = collect_change_evidence(
+                    workspace, record["base_commit"], task_id, runs_dir,
+                    automated_checks=automated_checks,
+                )
+                record["review_evidence"] = evidence["evidence_path"]
+            if result.returncode == 130 or automated_checks["status"] == "cancelled":
+                record.update(status="cancelled", termination_reason="cancelled", finished_at=now())
+            elif result.returncode == 0 and automated_checks["status"] in {"passed", "not_configured"}:
+                # The adapter intentionally emits partial; only explicit human
+                # approval may transition this task to completed.
+                record["status"] = "awaiting_review"
+                record["finished_at"] = now()
+            elif attempt < item.get("max_attempts", 1):
+                reason = (
+                    "timeout" if result.returncode == 124
+                    else "acceptance_checks_failed" if result.returncode == 0
+                    else "process_failed"
+                )
+                record.update(status="retryable", termination_reason=reason, finished_at=now())
+            else:
+                reason = (
+                    "timeout" if result.returncode == 124
+                    else "acceptance_checks_failed" if result.returncode == 0
+                    else "process_failed"
+                )
+                record.update(status="failed", termination_reason=reason, finished_at=now())
+            record["updated_at"] = now()
+            state["updated_at"] = now()
+            save_state(state_path, state)
+            progress = True
+            # Stop after one actual agent invocation: review/approval is a gate.
+            print(f"{task_id}: {record['status']} (exit={result.returncode}, checks={automated_checks['status']}, attempt={attempt})")
+            return 1 if result.returncode or automated_checks["status"] not in {"passed", "not_configured"} else 0
+    save_state(state_path, state)
+    return 0
+
+
+def request_cancel(task_id: str, state: dict[str, Any], runs_dir: Path) -> Path:
+    """Write a cooperative cancellation marker for the currently running attempt."""
+    record = state.get("tasks", {}).get(task_id)
+    if record is None:
+        raise ValueError(f"Unknown task_id: {task_id}")
+    if record.get("status") != "running":
+        raise ValueError(f"{task_id} is {record.get('status')}; only running tasks can be cancelled.")
+    attempt = record.get("attempts", 0)
+    if attempt < 1:
+        raise ValueError(f"{task_id} has no active attempt to cancel.")
+    marker = runs_dir / task_id / f"cancel-attempt-{attempt}.request"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        marker.write_text(json.dumps({"task_id": task_id, "attempt": attempt, "requested_at": now()}), encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"Cannot create cancellation marker: {exc}") from exc
+    return marker
+
+
+            )
             state["updated_at"] = now()
             save_state(state_path, state)
             result = subprocess.run(command, cwd=ROOT, check=False)
