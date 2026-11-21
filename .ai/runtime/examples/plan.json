@@ -1,0 +1,12 @@
+{
+  "protocol_version": "1.0",
+  "tasks": [
+    {
+      "task_id": "example-review",
+      "task_file": ".ai/runtime/examples/task.json",
+      "harness": "codex",
+      "depends_on": [],
+      "max_attempts": 2
+    }
+  ]
+}
