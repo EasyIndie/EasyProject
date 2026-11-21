@@ -82,6 +82,77 @@ class AgentDiscoveryTests(unittest.TestCase):
             self.assertEqual(report["candidates"][0]["evidence"]["path"], "sample.py")
             self.assertEqual(report["skipped_files"], 1)
 
+    def test_ignores_marker_vocabulary_definitions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.make_repo(root)
+            source = root / "src" / "vocabulary.py"
+            source.parent.mkdir()
+            source.write_text(
+                'MARKERS = {"TODO", "FIXME", "HACK"}\n'
+                'if marker not in {"TODO", "FIXME", "HACK"}:\n'
+                "    pass\n"
+                "# TODO: real maintenance item\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "-C", str(root), "add", "src/vocabulary.py"], check=True)
+            report = discovery.discover(root)
+            self.assertEqual(report["candidate_count"], 1)
+            evidence = report["candidates"][0]["evidence"]
+            self.assertEqual(evidence["path"], "src/vocabulary.py")
+            self.assertEqual(evidence["line"], 4)
+            self.assertEqual(evidence["marker"], "TODO")
+
+    def test_ignores_test_files_and_fixtures(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.make_repo(root)
+            fixture = root / "tests" / "test_sample.py"
+            fixture.parent.mkdir()
+            fixture.write_text(
+                'source.write_text("# TODO: fixture marker\\n", encoding="utf-8")\n'
+                "# FIXME: marker in a test comment\n",
+                encoding="utf-8",
+            )
+            source = root / "src" / "sample.py"
+            source.parent.mkdir()
+            source.write_text("# TODO: real maintenance item\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "tests/test_sample.py", "src/sample.py"],
+                check=True,
+            )
+            report = discovery.discover(root)
+            self.assertEqual(report["candidate_count"], 1)
+            self.assertEqual(report["candidates"][0]["evidence"]["path"], "src/sample.py")
+            self.assertEqual(report["skipped_files"], 1)
+
+    def test_ignores_markers_inside_string_literals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.make_repo(root)
+            (root / "sample.py").write_text(
+                'DEFAULT_DESCRIPTION = "TODO: describe this project"\n'
+                'DOCSTRING = """\n'
+                "TODO: inside a docstring\n"
+                '"""\n'
+                "# TODO: real maintenance item\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "-C", str(root), "add", "sample.py"], check=True)
+            report = discovery.discover(root)
+            self.assertEqual(report["candidate_count"], 1)
+            self.assertEqual(report["candidates"][0]["evidence"]["line"], 5)
+
+    def test_reports_markers_after_unpaired_apostrophes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.make_repo(root)
+            (root / "notes.py").write_text("# don't drop this TODO later\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "notes.py"], check=True)
+            report = discovery.discover(root)
+            self.assertEqual(report["candidate_count"], 1)
+            self.assertEqual(report["candidates"][0]["evidence"]["marker"], "TODO")
+
     def test_rejects_non_repository_root(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ValueError):

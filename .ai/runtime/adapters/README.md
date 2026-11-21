@@ -18,12 +18,12 @@ Supported harness names: `pi`, `codex`, and `claude-code`. The corresponding exe
 | Capability | Pi | Codex CLI | Claude Code |
 |---|---|---|---|
 | Read-only | Built-in read tools allowlist | `read-only` sandbox | `plan` permission mode |
-| Repository write | Rejected: CLI allowlist is not an OS sandbox | `workspace-write` sandbox with `on-request` approval | `default` permission mode; relies on user's configured permission policy |
+| Repository write | Opt-in: `harness_options.pi_unsandboxed_write=true` adds `edit,write,bash` | `workspace-write` sandbox with `on-request` approval | `default` permission mode; relies on user's configured permission policy |
 | Network | Rejected | Rejected by this adapter | Rejected by this adapter |
 | Secrets | Rejected | Rejected | Rejected |
 | External side effects | Rejected | Rejected | Rejected |
 
-This is intentionally conservative. The adapter does not provide a universal security sandbox. Codex enforces workspace sandboxing at the OS boundary. Claude Code's default permission mode relies on the user's configured permissions and may prompt. Pi's read-only tool allowlist is a capability restriction, not a filesystem sandbox; write tasks are therefore rejected.
+This is intentionally conservative. The adapter does not provide a universal security sandbox. Codex enforces workspace sandboxing at the OS boundary. Claude Code's default permission mode relies on the user's configured permissions and may prompt. Pi's `--tools` allowlist is a capability restriction, not a filesystem sandbox, so write access is never granted implicitly: a write task must carry `harness_options.pi_unsandboxed_write=true`, which appears in the reviewed Task Envelope and in any approval artifact. With that acknowledgement Pi receives `edit`, `write`, and `bash`; without it the task is rejected. Network denial remains advisory for Pi because the adapter cannot enforce it.
 
 ## Output and review
 
@@ -37,7 +37,7 @@ Timeouts default to the task envelope's `timeout_minutes` and can be overridden 
 
 ## Harness notes
 
-- **Pi:** Uses print/JSON mode and a read-only built-in tool allowlist. It preserves Pi's configured provider, model, and authentication.
+- **Pi:** Uses print/JSON mode. Read-only tasks get the `read,grep,find,ls` allowlist; acknowledged write tasks (`harness_options.pi_unsandboxed_write=true`) also get `edit,write,bash`. It preserves Pi's configured provider, model, and authentication. Run Pi write tasks only inside an isolated worktree.
 - **Codex:** Uses `codex exec --json`, with `read-only` or `workspace-write` sandbox and `on-request` approval. It preserves the user's existing Codex authentication and model configuration.
 - **Claude Code:** Uses `claude -p --output-format json`; read-only tasks use plan mode, while write tasks use default permission mode and preserve user-configured permission rules. Never add `--dangerously-skip-permissions` or bypass permission modes.
 

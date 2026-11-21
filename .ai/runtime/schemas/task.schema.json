@@ -147,6 +147,19 @@
       },
       "default": {}
     },
+    "harness_options": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Explicit per-task acknowledgements for harness limitations that cannot be enforced by this adapter.",
+      "properties": {
+        "pi_unsandboxed_write": {
+          "type": "boolean",
+          "default": false,
+          "description": "Acknowledge that Pi has no OS-level sandbox before granting repository write access."
+        }
+      },
+      "default": {}
+    },
     "acceptance_checks": {
       "type": "array",
       "uniqueItems": true,

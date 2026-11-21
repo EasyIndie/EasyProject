@@ -59,10 +59,21 @@ def build_command(harness: str, task: dict, prompt: str) -> list[str]:
         raise ValueError("external_side_effects=true is unsupported; publication, deployment, and external mutations require a separately approved workflow.")
 
     if harness == "pi":
+        # Pi's --tools allowlist is a capability restriction, not an OS sandbox.
+        # Write access therefore requires an explicit, per-task acknowledgement
+        # carried in the Task Envelope so the approval record shows the boundary change.
+        if permissions["repository_write"] and not task.get("harness_options", {}).get(
+            "pi_unsandboxed_write"
+        ):
+            raise ValueError(
+                "Pi write tasks require the explicit Task Envelope opt-in "
+                "harness_options.pi_unsandboxed_write=true; do not grant it implicitly."
+            )
+        # Read tools only, plus edit/write/shell for the explicitly acknowledged write mode.
+        tools = "read,grep,find,ls"
         if permissions["repository_write"]:
-            raise ValueError("Pi's CLI tool allowlist is not an OS sandbox; this adapter supports Pi read-only tasks only.")
-        # Pi's built-in read tools only; do not expose edit/write/shell tools.
-        return ["pi", "--print", "--mode", "json", "--tools", "read,grep,find,ls", prompt]
+            tools = "read,grep,find,ls,edit,write,bash"
+        return ["pi", "--print", "--mode", "json", "--tools", tools, prompt]
 
     if harness == "codex":
         sandbox = "workspace-write" if permissions["repository_write"] else "read-only"
