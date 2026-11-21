@@ -23,6 +23,8 @@ required_files=(
   ".ai/runtime/schemas/task.schema.json"
   ".ai/runtime/schemas/handoff.schema.json"
   "scripts/evolution.py"
+  "scripts/agent-benchmark.py"
+  "tests/test_agent_benchmark.py"
   "scripts/check-template-cleanliness.py"
   "tests/test_evolution.py"
   ".markdownlint-cli2.jsonc"
@@ -50,6 +52,7 @@ for name in (
     "scripts/agent-run.py", "tests/test_agent_runner.py",
     "scripts/agent-orchestrate.py", "tests/test_agent_orchestrator.py",
     "scripts/evolution.py", "tests/test_evolution.py",
+    "scripts/agent-benchmark.py", "tests/test_agent_benchmark.py",
     "scripts/check-template-cleanliness.py",
 ):
     ast.parse(Path(name).read_text(encoding="utf-8"))
