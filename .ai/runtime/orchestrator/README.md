@@ -72,9 +72,11 @@ captured evidence and rejects approval if any file changed after review or
 `git diff --check` failed. A successful approval moves the task to
 `approved`, but does not yet unlock dependents. The separate `--integrate`
 step requires a clean target checkout on a named branch whose history contains
-the task's recorded base commit. It stages the reviewed worktree contents,
-checks the staged file manifest, creates a local commit in the task worktree,
-and cherry-picks that commit onto the current target branch. Only after that
+the task's recorded base commit. It stages the complete reviewed worktree tree,
+normalizes any agent-created commits back to the recorded base, checks the full
+staged file manifest, creates one local integration commit, and cherry-picks
+that commit onto the current target branch. This preserves earlier agent commits
+as part of the reviewed result rather than cherry-picking only the last commit. Only after that
 local cherry-pick succeeds does the task become `completed` and unlock its
 dependents. The next dependent worktree is therefore based on the newly
 integrated target-branch HEAD.
