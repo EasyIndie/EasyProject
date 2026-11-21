@@ -12,7 +12,9 @@ This directory defines a harness-neutral interchange contract. It is a protocol 
 
 ## Self-evolution
 
-See [the isolated self-evolution runtime guide](evolution/README.md) for running EasyProject in a stable/candidate worktree arrangement and validating changes with the candidate runtime itself.\n\n## Protocol files
+See [the isolated self-evolution runtime guide](evolution/README.md) for running EasyProject in a stable/candidate worktree arrangement and validating changes with the candidate runtime itself.
+
+## Protocol files
 
 - `schemas/task.schema.json`: task request envelope, including optional fixed-ID `acceptance_checks`.
 - `schemas/handoff.schema.json`: agent result and handoff envelope.
