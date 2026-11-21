@@ -23,9 +23,8 @@ ACCEPTANCE_CHECKS = {
 
 def approval_payload(wrapper: dict[str, Any]) -> dict[str, Any]:
     """Return the fields covered by the non-authenticating approval integrity digest."""
-    fields = ("promotion_version", "approved_at", "approval_note",
-              "approval_mode", "evidence_verified", "task")
-    return {key: wrapper.get(key) for key in fields}
+    return {key: value for key, value in wrapper.items()
+            if key != "approval_sha256"}
 
 
 def compute_approval_digest(wrapper: dict[str, Any]) -> str:
