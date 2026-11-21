@@ -208,7 +208,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     action_parser = subparsers.add_parser("run", help="resume, inspect, approve, or integrate a candidate")
     action_parser.add_argument("--id", required=True)
-    action_parser.add_argument("action", choices=("status", "resume", "approve", "integrate"))
+    action_parser.add_argument("action", choices=("status", "resume", "approve", "integrate", "cancel"))
 
     args = parser.parse_args(argv)
     try:
