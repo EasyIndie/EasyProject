@@ -218,7 +218,7 @@ def load_approved_task(task_file: Path, run_id: str, harness: str,
     if wrapper.get("promotion_version") != "1.0":
         raise ValueError("task file is not a supported human-promotion artifact")
     if wrapper.get("approval_mode") != "write-enabled":
-        raise ValueError("approved task must explicitly enable repository writes")
+        raise ValueError("approved task artifact must use write-enabled approval mode")
     if not wrapper.get("approval_note"):
         raise ValueError("approved task is missing its approval note")
 
