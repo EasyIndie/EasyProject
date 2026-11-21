@@ -125,7 +125,11 @@ def prepare_worktree(repo: Path, runs_dir: Path, task_id: str,
             common = (path / common).resolve()
         else:
             common = common.resolve()
-        expected_common = (repo / ".git").resolve()
+        expected_common = Path(git_output(repo, "rev-parse", "--git-common-dir"))
+        if not expected_common.is_absolute():
+            expected_common = (repo / expected_common).resolve()
+        else:
+            expected_common = expected_common.resolve()
         if top != path or common != expected_common:
             raise ValueError(task_id + ": recorded path is not a worktree of this repository.")
         return path
