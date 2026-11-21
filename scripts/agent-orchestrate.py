@@ -473,6 +473,8 @@ def main() -> int:
             state = initial_state(plan, args.worktrees)
             save_state(state_path, state)
         if args.approve:
+            if not args.resume:
+                raise ValueError("--approve requires --resume.")
             approve(args.approve, state, state_path)
             next_status = state["tasks"][args.approve]["status"]
             print(f"{args.approve}: {next_status} (human-approved)")
