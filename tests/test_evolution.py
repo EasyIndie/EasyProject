@@ -241,12 +241,11 @@ class EvolutionContractTests(unittest.TestCase):
             self.assertEqual(report["execution"]["tasks"]["task-a"]["status"], "awaiting_review")
             self.assertEqual(report["execution"]["tasks"]["task-a"]["automated_checks"], "passed")
 
-    def test_pi_harness_records_unsandboxed_write_acknowledgement(self):
+    def test_pi_task_does_not_auto_authorize_unsandboxed_write(self):
         task = evolution.make_task(
             "pi-case", "Add a regression test", "pi", ["python-unittest"]
         )
-        self.assertEqual(task["harness_options"], {"pi_unsandboxed_write": True})
-        self.assertTrue(any("no OS-level sandbox" in item for item in task["constraints"]))
+        self.assertNotIn("harness_options", task)
 
     def test_non_pi_task_has_no_harness_options(self):
         task = evolution.make_task(
@@ -254,12 +253,6 @@ class EvolutionContractTests(unittest.TestCase):
         )
         self.assertNotIn("harness_options", task)
 
-    def test_rejects_approved_pi_task_without_acknowledgement(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / "repo"
-            _, artifact, task_id, _ = self.make_approved_artifact(root)
-            with self.assertRaisesRegex(ValueError, "pi_unsandboxed_write"):
-                evolution.load_approved_task(artifact, task_id, "pi", root)
 
     def test_report_requires_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
