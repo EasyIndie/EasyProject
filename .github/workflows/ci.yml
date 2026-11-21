@@ -30,7 +30,8 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install --yes shellcheck python3-jsonschema
+          sudo apt-get install --yes shellcheck
+          python3 -m pip install --disable-pip-version-check --user jsonschema==4.25.1
           npm install --global markdownlint-cli2@0.24.2
 
           curl --fail --silent --show-error --location \
