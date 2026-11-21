@@ -73,13 +73,16 @@ Requirements:
 
 - A clean EasyProject checkout on a named branch.
 - Python with the repository's `jsonschema` dependency installed.
-- A configured and authenticated `codex` or `claude` CLI on `PATH`.
+- A configured and authenticated `codex`, `claude`, or `pi` CLI on `PATH`.
 - The selected Agent CLI must be permitted to write to its isolated workspace by its own local permission configuration.
+
+Pi is supported, but Pi has no OS-level sandbox. A Pi self-evolution task therefore carries `harness_options.pi_unsandboxed_write=true` in its Task Envelope, and an approved discovery artifact must contain the same acknowledgement or Evolution rejects it. Treat Pi runs as worktree-isolated, not sandboxed: network and external side effects are policy constraints, not enforced boundaries. Prefer Codex (`workspace-write` sandbox) when a real boundary is required.
 
 First run the non-mutating prerequisite check. It verifies the Git checkout, clean working tree, Python dependency, and CLI executable/version. It does not inspect or print credentials and does not prove that the CLI is authenticated:
 
 ```bash
 python3 scripts/evolution.py doctor --harness codex
+python3 scripts/evolution.py doctor --harness pi
 ```
 
 The external runtime directory also contains `manifest.json`, which records the stable base SHA, branch, CLI version, Python/jsonschema versions, goal, task source, and configured checks. It never records credential values.

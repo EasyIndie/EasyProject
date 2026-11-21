@@ -17,7 +17,7 @@ from typing import Sequence
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HARNESS_BINARIES = {"codex": "codex", "claude-code": "claude"}
+HARNESS_BINARIES = {"codex": "codex", "claude-code": "claude", "pi": "pi"}
 CHECK_IDS = ("python-unittest", "pytest", "swift-test", "cargo-test", "npm-test", "go-test", "repo-validation")
 
 
@@ -179,7 +179,7 @@ def make_task(run_id: str, goal: str, harness: str,
         raise ValueError("allowlisted acceptance checks must include only: " + ", ".join(CHECK_IDS))
     if len(acceptance) != len(set(acceptance)):
         raise ValueError("acceptance checks must be unique")
-    return {
+    task = {
         "protocol_version": "1.0",
         "task_id": run_id,
         "issue": None,
@@ -223,6 +223,14 @@ def make_task(run_id: str, goal: str, harness: str,
         },
         "acceptance_checks": acceptance,
     }
+    if harness == "pi":
+        # Pi provides no OS sandbox; record the acknowledgement in the envelope.
+        task["harness_options"] = {"pi_unsandboxed_write": True}
+        task["constraints"].append(
+            "Pi has no OS-level sandbox: run only inside the isolated task worktree "
+            "and never use network, credentials, or external side effects."
+        )
+    return task
 
 
 def load_approved_task(task_file: Path, run_id: str, harness: str,
@@ -287,6 +295,10 @@ def load_approved_task(task_file: Path, run_id: str, harness: str,
     )):
         raise ValueError("approved task cannot enable network, secrets, or external side effects")
     task["preferred_harness"] = harness
+    if harness == "pi" and not task.get("harness_options", {}).get("pi_unsandboxed_write"):
+        raise ValueError(
+            "approved Pi task must acknowledge harness_options.pi_unsandboxed_write=true"
+        )
     try:
         from jsonschema import Draft202012Validator
     except ImportError as exc:
