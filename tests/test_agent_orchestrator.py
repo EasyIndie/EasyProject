@@ -199,9 +199,10 @@ class OrchestratorTests(unittest.TestCase):
                 orchestrator.integrate_task(root, "a", state, state_path)
             record = state["tasks"]["a"]
             self.assertEqual(record["status"], "integration_conflict")
-            self.assertTrue((Path(orchestrator.git_output(root, "rev-parse", "--git-path", "CHERRY_PICK_HEAD"))).exists()
-                            if Path(orchestrator.git_output(root, "rev-parse", "--git-path", "CHERRY_PICK_HEAD")).is_absolute()
-                            else (root / orchestrator.git_output(root, "rev-parse", "--git-path", "CHERRY_PICK_HEAD")).exists())
+            self.assertEqual(
+                orchestrator.git_result(root, "rev-parse", "--verify", "CHERRY_PICK_HEAD").returncode,
+                0,
+            )
             (root / "file.txt").write_text("manually resolved\\n", encoding="utf-8")
             subprocess.run(["git", "-C", str(root), "add", "file.txt"], check=True)
             subprocess.run(
