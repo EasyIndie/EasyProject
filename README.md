@@ -11,6 +11,8 @@
 3. Start an agent with: **"Read AGENTS.md and follow the repository instructions."**
 4. Fill in the project context incrementally; do not create documents that do not help a real decision or task.
 
+When working on the canonical EasyProject template itself, Agents should follow the [local self-evolution playbook](.ai/runtime/evolution/AGENT-PLAYBOOK.md). Repositories generated from this template use their normal project workflow instead.
+
 ## Start here
 
 | Entry point | Purpose |
@@ -24,6 +26,7 @@
 | [`.ai/agents/`](.ai/agents/) | Role contracts and handoff expectations |
 | [`.ai/workflows/`](.ai/workflows/) | Task-sized delivery workflows |
 | [`.ai/runtime/discovery/README.md`](.ai/runtime/discovery/README.md) | Evidence-based discovery and explicit task promotion |
+| [`.ai/runtime/evolution/AGENT-PLAYBOOK.md`](.ai/runtime/evolution/AGENT-PLAYBOOK.md) | Local template maintenance and isolated self-evolution |
 
 ## Operating model
 
@@ -57,7 +60,7 @@ Do not force every change through a heavyweight PRD. Use the smallest amount of 
   instructions/ path-specific Copilot instructions
   workflows/    executable CI workflows
 architecture/   architecture notes and ADRs when needed
-docs/           user and engineering documentation
+docs/           user and engineering docs
 examples/       illustrative end-to-end examples
 scripts/        repository validation and automation
 specs/          requirements for non-trivial product changes

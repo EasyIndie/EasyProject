@@ -1,5 +1,7 @@
 # Self-evolution runtime
 
+For a fresh local clone, Agent session startup, canonical-template detection, harness routing, isolated iteration, and the human review/PR handoff, start with the [local template maintenance and self-evolution playbook](AGENT-PLAYBOOK.md). The playbook is the Agent-facing entry point; this document remains the detailed runtime command reference.
+
 EasyProject self-evolution uses two nested isolation boundaries:
 
 1. The **stable checkout** creates and controls a candidate Git worktree.
