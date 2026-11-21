@@ -287,7 +287,9 @@ def write_run_inputs(run_dir: Path, run_id: str, task: dict) -> tuple[Path, Path
     if task.get("task_id") != run_id:
         raise ValueError("run ID must match the Task Envelope task_id")
     run_dir.mkdir(parents=True, exist_ok=True)
-    task_path = run_dir / "task.json"
+    orchestrator_runs_dir = run_dir / "orchestrator"
+    orchestrator_runs_dir.mkdir(parents=True, exist_ok=True)
+    task_path = orchestrator_runs_dir / "task.json"
     plan_path = run_dir / "plan.json"
     task_path.write_text(json.dumps(task, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     plan = {
