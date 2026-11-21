@@ -185,51 +185,50 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     cancel_file = args.cancel_file.resolve() if args.cancel_file else None
-    try:
         exit_code, stdout, stderr, termination = run_harness(
-            command, workspace, timeout * 60, cancel_file,
-        )
-        stdout_path, stderr_path = persist_raw_output(args.output, stdout, stderr)
-        if termination == "cancelled":
-            print("agent-run: cancellation request observed; process group stopped.", file=sys.stderr)
-            return 130
-        if termination == "timeout":
-            print(f"agent-run: timed out after {timeout} minutes; process group stopped.", file=sys.stderr)
-            return 124
-        status = "partial" if exit_code == 0 else "failed"
-        handoff = {
-            "protocol_version": "1.0",
-            "task_id": task["task_id"],
-            "agent_role": task.get("preferred_role"),
-            "harness": args.harness,
-            "status": status,
-            "summary": "Raw harness output captured; acceptance criteria require human/orchestrator review.",
-            "changed_files": [],
-            "decisions": [],
-            "verification": [{
-                "command": " ".join(command[:command.index(prompt)]) + " <prompt>",
-                "result": "not-run",
-                "evidence": "Harness execution is not equivalent to acceptance-criteria verification."
-            }],
-            "risks": ["Review raw output and git diff; this adapter does not independently verify acceptance criteria."],
-            "unresolved_questions": [],
-            "next_action": "Inspect output, working-tree diff, and acceptance criteria; update the handoff before marking completed.",
-            "pull_request_url": None,
-            "commit_sha": None,
-            "artifacts": {
-                "stdout_path": stdout_path,
-                "stderr_path": stderr_path,
-                "exit_code": exit_code
-            }
+        command, workspace, timeout * 60, cancel_file,
+    )
+    stdout_path, stderr_path = persist_raw_output(args.output, stdout, stderr)
+    if termination == "cancelled":
+        print("agent-run: cancellation request observed; process group stopped.", file=sys.stderr)
+        return 130
+    if termination == "timeout":
+        print(f"agent-run: timed out after {timeout} minutes; process group stopped.", file=sys.stderr)
+        return 124
+    status = "partial" if exit_code == 0 else "failed"
+    handoff = {
+        "protocol_version": "1.0",
+        "task_id": task["task_id"],
+        "agent_role": task.get("preferred_role"),
+        "harness": args.harness,
+        "status": status,
+        "summary": "Raw harness output captured; acceptance criteria require human/orchestrator review.",
+        "changed_files": [],
+        "decisions": [],
+        "verification": [{
+            "command": " ".join(command[:command.index(prompt)]) + " <prompt>",
+            "result": "not-run",
+            "evidence": "Harness execution is not equivalent to acceptance-criteria verification."
+        }],
+        "risks": ["Review raw output and git diff; this adapter does not independently verify acceptance criteria."],
+        "unresolved_questions": [],
+        "next_action": "Inspect output, working-tree diff, and acceptance criteria; update the handoff before marking completed.",
+        "pull_request_url": None,
+        "commit_sha": None,
+        "artifacts": {
+            "stdout_path": stdout_path,
+            "stderr_path": stderr_path,
+            "exit_code": exit_code
         }
-        from jsonschema import Draft202012Validator
-        handoff_schema = json.loads(HANDOFF_SCHEMA.read_text(encoding="utf-8"))
-        Draft202012Validator(handoff_schema).validate(handoff)
-        if args.output:
-            args.output.write_text(json.dumps(handoff, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        else:
-            print(json.dumps(handoff, ensure_ascii=False, indent=2))
-        return exit_code
+    }
+    from jsonschema import Draft202012Validator
+    handoff_schema = json.loads(HANDOFF_SCHEMA.read_text(encoding="utf-8"))
+    Draft202012Validator(handoff_schema).validate(handoff)
+    if args.output:
+        args.output.write_text(json.dumps(handoff, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    else:
+        print(json.dumps(handoff, ensure_ascii=False, indent=2))
+    return exit_code
 
 
 if __name__ == "__main__":
