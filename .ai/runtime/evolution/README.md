@@ -78,6 +78,19 @@ git log -1 --oneline
 
 Review the complete candidate diff against the stable base. Push the candidate branch and create a PR only through a separately reviewed GitHub workflow. This tool never pushes, creates PRs, changes branch protection, merges, deploys, or publishes.
 
+## Agent benchmark
+
+Every run manifest and orchestrator journal can be aggregated into a local benchmark report:
+
+```bash
+python3 scripts/agent-benchmark.py
+python3 scripts/agent-benchmark.py --runs-root ../.EasyProject-evolution --output ../easyproject-agent-benchmark.json
+```
+
+The report groups results by harness and includes attempted tasks, agent-success rate, acceptance-check pass rate, total attempts, and mean recorded task duration. For this report, an agent success means the run reached `awaiting_review`, `approved`, or `completed`; it does not mean a human approved the change. Acceptance pass rate is calculated only from tasks with an explicit `passed` or `failed` check result.
+
+Token usage and estimated cost remain `null` because the current adapters do not provide a stable, normalized usage contract. Do not infer cost from raw CLI output. Compare harnesses only on equivalent tasks, base commits, checks, and model/configuration settings. A missing duration is left unavailable rather than fabricated.
+
 ## Stable / candidate lifecycle
 
 - Stable checkout: creates the candidate, remains unchanged, and retains the known-good runtime.
