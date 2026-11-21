@@ -2,10 +2,13 @@
 """Tests for DAG validation and approval-gated orchestration."""
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +55,22 @@ class OrchestratorTests(unittest.TestCase):
             path.write_text(json.dumps(plan([item("a"), item("a")])))
             with self.assertRaisesRegex(ValueError, "duplicate"):
                 orchestrator.load_plan(path)
+
+
+    def test_dry_run_lists_full_dag_without_creating_journal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan_path = root / "plan.json"
+            runs_dir = root / "runs"
+            plan_path.write_text(json.dumps(plan([item("a"), item("b", ["a"])])))
+            output = io.StringIO()
+            with patch("sys.argv", ["agent-orchestrate", "--plan", str(plan_path),
+                                    "--runs-dir", str(runs_dir), "--dry-run"]):
+                with contextlib.redirect_stdout(output):
+                    self.assertEqual(orchestrator.main(), 0)
+            self.assertIn("READY a:", output.getvalue())
+            self.assertIn("READY b:", output.getvalue())
+            self.assertFalse((runs_dir / "orchestrator-state.json").exists())
 
     def test_approval_requires_review_state_and_handoff(self):
         with tempfile.TemporaryDirectory() as tmp:
