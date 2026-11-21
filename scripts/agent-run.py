@@ -49,7 +49,7 @@ def build_prompt(task: dict) -> str:
     )
 
 
-def build_command(harness: str, task: dict, prompt: str) -> list[str]:
+def build_command(harness: str, task: dict, prompt: str, *, allow_unsandboxed_pi_write: bool = False) -> list[str]:
     permissions = task["permissions"]
     if permissions["secret_access"]:
         raise ValueError("secret_access=true is unsupported: adapters never grant agent access to secrets.")
@@ -62,12 +62,10 @@ def build_command(harness: str, task: dict, prompt: str) -> list[str]:
         # Pi's --tools allowlist is a capability restriction, not an OS sandbox.
         # Write access therefore requires an explicit, per-task acknowledgement
         # carried in the Task Envelope so the approval record shows the boundary change.
-        if permissions["repository_write"] and not task.get("harness_options", {}).get(
-            "pi_unsandboxed_write"
-        ):
+        if permissions["repository_write"] and not allow_unsandboxed_pi_write:
             raise ValueError(
-                "Pi write tasks require the explicit Task Envelope opt-in "
-                "harness_options.pi_unsandboxed_write=true; do not grant it implicitly."
+                "Pi has no OS-level sandbox. Write access is disabled by default; "
+                "pass --allow-unsandboxed-pi-write only after explicitly accepting the host-access risk."
             )
         # Read tools only, plus edit/write/shell for the explicitly acknowledged write mode.
         tools = "read,grep,find,ls"
@@ -176,6 +174,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, help="Write raw stdout/stderr and a handoff draft to this JSON file")
     parser.add_argument("--cwd", type=Path, default=ROOT, help="Repository workspace in which the agent process runs")
     parser.add_argument("--cancel-file", type=Path, help="File created by the orchestrator to request cancellation")
+    parser.add_argument(
+        "--allow-unsandboxed-pi-write", action="store_true",
+        help="Explicitly allow Pi write access without an OS sandbox; unsafe and not recommended.",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -184,7 +186,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if shutil.which(executable) is None:
             raise ValueError(f"Required executable not found on PATH: {executable}")
         prompt = build_prompt(task)
-        command = build_command(args.harness, task, prompt)
+        command = build_command(
+            args.harness, task, prompt,
+            allow_unsandboxed_pi_write=args.allow_unsandboxed_pi_write,
+        )
         workspace = resolve_workspace(args.cwd)
     except (ValueError, OSError, KeyError) as exc:
         print(f"agent-run: {exc}", file=sys.stderr)
