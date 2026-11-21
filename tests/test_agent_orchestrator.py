@@ -34,8 +34,8 @@ class OrchestratorTests(unittest.TestCase):
             workspace = Path(tmp) / "workspace"
             (workspace / "tests").mkdir(parents=True)
             (workspace / "tests" / "test_sample.py").write_text(
-                "import unittest\\nclass SampleTests(unittest.TestCase):\\n"
-                "    def test_ok(self): self.assertTrue(True)\\n",
+                "import unittest\nclass SampleTests(unittest.TestCase):\n"
+                "    def test_ok(self): self.assertTrue(True)\n",
                 encoding="utf-8",
             )
             result = orchestrator.run_acceptance_checks(
@@ -51,8 +51,8 @@ class OrchestratorTests(unittest.TestCase):
             workspace = Path(tmp) / "workspace"
             (workspace / "tests").mkdir(parents=True)
             (workspace / "tests" / "test_failure.py").write_text(
-                "import unittest\\nclass FailureTests(unittest.TestCase):\\n"
-                "    def test_fail(self): self.fail('expected failure')\\n",
+                "import unittest\nclass FailureTests(unittest.TestCase):\n"
+                "    def test_fail(self): self.fail('expected failure')\n",
                 encoding="utf-8",
             )
             result = orchestrator.run_acceptance_checks(
