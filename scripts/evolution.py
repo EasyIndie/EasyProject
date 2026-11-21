@@ -54,7 +54,7 @@ def make_task(run_id: str, goal: str, harness: str,
     if harness not in HARNESS_BINARIES:
         raise ValueError(f"unsupported harness: {harness}")
     if not acceptance or any(item not in CHECK_IDS for item in acceptance):
-        raise ValueError("acceptance checks must include only: " + ", ".join(CHECK_IDS))
+        raise ValueError("allowlisted acceptance checks must include only: " + ", ".join(CHECK_IDS))
     return {
         "protocol_version": "1.0",
         "task_id": run_id,
