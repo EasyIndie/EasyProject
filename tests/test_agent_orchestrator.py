@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -65,6 +66,17 @@ class OrchestratorTests(unittest.TestCase):
     def test_unknown_acceptance_check_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "Unsupported acceptance check"):
             orchestrator.acceptance_command("arbitrary-shell")
+
+    def test_acceptance_check_command_can_be_cancelled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cancel_file = Path(tmp) / "cancel.request"
+            cancel_file.write_text("requested", encoding="utf-8")
+            code, stdout, stderr, reason = orchestrator.run_command_controlled(
+                [sys.executable, "-c", "import time; time.sleep(5)"],
+                Path(tmp), 5, cancel_file,
+            )
+            self.assertEqual(code, 130)
+            self.assertEqual(reason, "cancelled")
 
     def test_cancel_request_only_targets_the_active_attempt(self):
         with tempfile.TemporaryDirectory() as tmp:
