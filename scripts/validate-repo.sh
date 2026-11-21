@@ -27,6 +27,8 @@ required_files=(
   "tests/test_agent_benchmark.py"
   "scripts/agent-discover.py"
   "tests/test_agent_discover.py"
+  "scripts/agent-task-approve.py"
+  "tests/test_agent_task_approve.py"
   ".ai/runtime/discovery/README.md"
   "scripts/check-template-cleanliness.py"
   "tests/test_evolution.py"
@@ -57,6 +59,7 @@ for name in (
     "scripts/evolution.py", "tests/test_evolution.py",
     "scripts/agent-benchmark.py", "tests/test_agent_benchmark.py",
     "scripts/agent-discover.py", "tests/test_agent_discover.py",
+    "scripts/agent-task-approve.py", "tests/test_agent_task_approve.py",
     "scripts/check-template-cleanliness.py",
 ):
     ast.parse(Path(name).read_text(encoding="utf-8"))
@@ -64,6 +67,8 @@ print("Python syntax: OK")
 PY
 
 python3 scripts/check-template-cleanliness.py
+python3 scripts/agent-discover.py --max-candidates 5 >/dev/null
+python3 scripts/agent-task-approve.py --help >/dev/null
 python3 -m unittest discover --start-directory tests --pattern 'test_*.py' -v
 python3 scripts/bootstrap.py --help >/dev/null
 python3 scripts/bootstrap.py --yes --dry-run --name "CI Sample" --description "Bootstrap smoke test" >/dev/null
