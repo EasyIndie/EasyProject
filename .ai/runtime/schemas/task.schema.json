@@ -146,6 +146,23 @@
         }
       },
       "default": {}
+    },
+    "acceptance_checks": {
+      "type": "array",
+      "uniqueItems": true,
+      "default": [],
+      "description": "Optional executable checks selected from the orchestrator's fixed allowlist.",
+      "items": {
+        "enum": [
+          "python-unittest",
+          "pytest",
+          "swift-test",
+          "cargo-test",
+          "npm-test",
+          "go-test",
+          "repo-validation"
+        ]
+      }
     }
   }
 }
