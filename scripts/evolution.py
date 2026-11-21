@@ -18,7 +18,7 @@ from typing import Sequence
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HARNESS_BINARIES = {"pi": "pi", "codex": "codex", "claude-code": "claude"}
+HARNESS_BINARIES = {"codex": "codex", "claude-code": "claude"}
 CHECK_IDS = (
     "python-unittest", "repo-validation",
 )
