@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import platform
 import re
@@ -16,7 +17,7 @@ from typing import Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 HARNESS_BINARIES = {"codex": "codex", "claude-code": "claude"}
-CHECK_IDS = ("python-unittest", "repo-validation")
+CHECK_IDS = ("python-unittest", "pytest", "swift-test", "cargo-test", "npm-test", "go-test", "repo-validation")
 
 
 def git(*args: str, cwd: Path = ROOT) -> str:
@@ -85,12 +86,17 @@ def preflight(harness: str) -> dict:
 
 
 def write_manifest(run_dir: Path, run_id: str, goal: str,
-                   harness: str, checks: list[str], preflight_result: dict) -> Path:
+                   harness: str, checks: list[str], preflight_result: dict,
+                   task_source: str = "manual-goal", task_id: str | None = None,
+                   approval_evidence: dict | None = None) -> Path:
     manifest = {
         "manifest_version": "1.0",
         "run_id": run_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "goal": goal.strip(),
+        "task_id": task_id or run_id,
+        "task_source": task_source,
+        "approval_evidence": approval_evidence,
         "harness": harness,
         "acceptance_checks": checks,
         "stable": {
@@ -156,6 +162,8 @@ def make_task(run_id: str, goal: str, harness: str,
         raise ValueError(f"unsupported harness: {harness}")
     if not acceptance or any(item not in CHECK_IDS for item in acceptance):
         raise ValueError("allowlisted acceptance checks must include only: " + ", ".join(CHECK_IDS))
+    if len(acceptance) != len(set(acceptance)):
+        raise ValueError("acceptance checks must be unique")
     return {
         "protocol_version": "1.0",
         "task_id": run_id,
@@ -202,9 +210,86 @@ def make_task(run_id: str, goal: str, harness: str,
     }
 
 
+def load_approved_task(task_file: Path, run_id: str, harness: str,
+                       root: Path = ROOT) -> tuple[dict, dict]:
+    """Load a human-promoted task and revalidate its source evidence before execution."""
+    root = root.resolve()
+    wrapper = json.loads(task_file.read_text(encoding="utf-8"))
+    if wrapper.get("promotion_version") != "1.0":
+        raise ValueError("task file is not a supported human-promotion artifact")
+    if wrapper.get("approval_mode") != "write-enabled":
+        raise ValueError("approved task artifact must use write-enabled approval mode")
+    if not wrapper.get("approval_note"):
+        raise ValueError("approved task is missing its approval note")
+
+    evidence = wrapper.get("evidence_verified", {})
+    if evidence.get("candidate_id") != run_id:
+        raise ValueError("approved task candidate ID does not match the Evolution run ID")
+    current_sha = git("rev-parse", "HEAD", cwd=root)
+    if evidence.get("base_sha") != current_sha:
+        raise ValueError("approved task base SHA is stale; rediscover and approve again")
+    relative = evidence.get("path")
+    if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
+        raise ValueError("approved task evidence path is invalid")
+    if ".." in Path(relative).parts:
+        raise ValueError("approved task evidence path must not traverse outside the repository")
+    source = root / relative
+    if source.is_symlink():
+        raise ValueError("approved task evidence path must not be a symlink")
+    resolved = source.resolve(strict=True)
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("approved task evidence path escapes the repository") from exc
+    git("ls-files", "--error-unmatch", "--", relative, cwd=root)
+    raw = resolved.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != evidence.get("file_sha256"):
+        raise ValueError("approved task source changed after approval")
+    lines = raw.decode("utf-8").splitlines()
+    line_number = evidence.get("line")
+    marker = evidence.get("marker")
+    if not isinstance(line_number, int) or line_number < 1 or line_number > len(lines):
+        raise ValueError("approved task evidence line is invalid")
+    if marker not in {"TODO", "FIXME", "HACK"} or not re.search(
+        rf"(?<![A-Za-z0-9_]){re.escape(marker)}(?![A-Za-z0-9_])",
+        lines[line_number - 1],
+    ):
+        raise ValueError("approved task marker no longer exists at the recorded location")
+
+    task = wrapper.get("task")
+    if not isinstance(task, dict) or task.get("task_id") != run_id:
+        raise ValueError("Evolution run ID must exactly match the approved Task Envelope ID")
+    permissions = task.get("permissions", {})
+    if not permissions.get("repository_read") or not permissions.get("repository_write"):
+        raise ValueError("approved task must explicitly allow repository read and write")
+    if any(permissions.get(key) for key in (
+        "network_access", "secret_access", "external_side_effects"
+    )):
+        raise ValueError("approved task cannot enable network, secrets, or external side effects")
+    task["preferred_harness"] = harness
+    try:
+        from jsonschema import Draft202012Validator
+    except ImportError as exc:
+        raise ValueError("jsonschema is required to validate the approved task") from exc
+    schema_path = root / ".ai/runtime/schemas/task.schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    Draft202012Validator(schema).validate(task)
+    return task, {
+        "path": relative,
+        "line": line_number,
+        "marker": marker,
+        "file_sha256": evidence["file_sha256"],
+        "base_sha": current_sha,
+    }
+
+
 def write_run_inputs(run_dir: Path, run_id: str, task: dict) -> tuple[Path, Path]:
+    if task.get("task_id") != run_id:
+        raise ValueError("run ID must match the Task Envelope task_id")
     run_dir.mkdir(parents=True, exist_ok=True)
-    task_path = run_dir / "task.json"
+    orchestrator_runs_dir = run_dir / "orchestrator"
+    orchestrator_runs_dir.mkdir(parents=True, exist_ok=True)
+    task_path = orchestrator_runs_dir / "task.json"
     plan_path = run_dir / "plan.json"
     task_path.write_text(json.dumps(task, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     plan = {
@@ -239,6 +324,27 @@ def start(args: argparse.Namespace) -> int:
     run_id = validate_run_id(args.id)
     if git("status", "--porcelain=v1"):
         raise ValueError("stable checkout must be clean before starting an evolution run")
+
+    approval_evidence = None
+    if args.approved_task:
+        task, approval_evidence = load_approved_task(args.approved_task, run_id, args.harness)
+        goal = task["objective"]
+        checks = args.check if args.check is not None else (
+            task.get("acceptance_checks") or ["python-unittest"]
+        )
+        if len(checks) != len(set(checks)):
+            raise ValueError("acceptance checks must be unique")
+        task["acceptance_checks"] = checks
+        from jsonschema import Draft202012Validator
+        schema = json.loads((ROOT / ".ai/runtime/schemas/task.schema.json").read_text(encoding="utf-8"))
+        Draft202012Validator(schema).validate(task)
+        task_source = "human-approved-discovery"
+    else:
+        goal = args.goal
+        checks = args.check or ["python-unittest"]
+        task = make_task(run_id, goal, args.harness, checks)
+        task_source = "manual-goal"
+
     environment = preflight(args.harness)
     candidate, branch, run_dir = candidate_paths(run_id)
     run_root = candidate.parent
@@ -251,10 +357,12 @@ def start(args: argparse.Namespace) -> int:
     run_root.mkdir(parents=True)
     try:
         git("worktree", "add", "-b", branch, str(candidate), base)
-        checks = args.check or ["python-unittest"]
-        task = make_task(run_id, args.goal, args.harness, checks)
         write_run_inputs(run_dir, run_id, task)
-        write_manifest(run_dir, run_id, args.goal, args.harness, checks, environment)
+        write_manifest(
+            run_dir, run_id, goal, args.harness, checks, environment,
+            task_source=task_source, task_id=task["task_id"],
+            approval_evidence=approval_evidence,
+        )
     except Exception:
         # Keep partial state for diagnosis; never silently delete a worktree or evidence.
         raise
@@ -291,10 +399,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     start_parser = subparsers.add_parser("start", help="create a candidate worktree and run a real Agent")
     start_parser.add_argument("--id", required=True)
-    start_parser.add_argument("--goal", required=True)
+    source_group = start_parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument("--goal", help="create a new generic self-evolution task")
+    source_group.add_argument("--approved-task", type=Path,
+                              help="execute a write-enabled artifact from agent-task-approve.py")
     start_parser.add_argument("--harness", choices=tuple(HARNESS_BINARIES), required=True)
     start_parser.add_argument("--check", choices=CHECK_IDS, action="append",
-                              help="allowlisted acceptance check; may be repeated")
+                              help="override task acceptance checks with allowlisted IDs")
     doctor_parser = subparsers.add_parser("doctor", help="check local prerequisites without starting an Agent")
     doctor_parser.add_argument("--harness", choices=tuple(HARNESS_BINARIES), required=True)
     report_parser = subparsers.add_parser("report", help="print the evidence-backed report for a run")
