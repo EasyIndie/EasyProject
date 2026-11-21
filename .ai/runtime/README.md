@@ -10,6 +10,10 @@ This directory defines a harness-neutral interchange contract. It is a protocol 
 - Require evidence-backed handoffs so orchestration can distinguish completed work from claims.
 - Allow a human or external orchestrator to run one or more harnesses without changing the task payload.
 
+## Self-evolution
+
+See [the isolated self-evolution runtime guide](evolution/README.md) for running EasyProject in a stable/candidate worktree arrangement and validating changes with the candidate runtime itself.
+
 ## Protocol files
 
 - `schemas/task.schema.json`: task request envelope, including optional fixed-ID `acceptance_checks`.

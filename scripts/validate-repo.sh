@@ -48,6 +48,8 @@ ast.parse(Path("scripts/agent-run.py").read_text(encoding="utf-8"))
 ast.parse(Path("tests/test_agent_runner.py").read_text(encoding="utf-8"))
 ast.parse(Path("scripts/agent-orchestrate.py").read_text(encoding="utf-8"))
 ast.parse(Path("tests/test_agent_orchestrator.py").read_text(encoding="utf-8"))
+ast.parse(Path("scripts/evolution.py").read_text(encoding="utf-8"))
+ast.parse(Path("tests/test_evolution.py").read_text(encoding="utf-8"))
 print("Python syntax: OK")
 PY
 
