@@ -5,7 +5,7 @@ EasyProject self-evolution uses two nested isolation boundaries:
 1. The **stable checkout** creates and controls a candidate Git worktree.
 2. The candidate's own **Evolution runtime** runs the task orchestrator, which creates a second worktree for the coding Agent.
 
-The stable checkout is never the Agent's write workspace. The candidate branch is not merged or pushed automatically.
+The stable checkout is never the Agent's write workspace. The candidate branch is not merged or pushed automatically. **All mutable run data is stored outside both Git worktrees**, so task envelopes, plans, journals, logs, and evidence cannot pollute the template or candidate source tree.
 
 ## Start a real evolution run
 
@@ -26,18 +26,20 @@ python3 scripts/evolution.py start \
   --check python-unittest
 ```
 
-The command creates:
+The command creates this sibling directory structure (not inside the repository):
 
-- A sibling candidate worktree at `../.EasyProject-evolution/<id>`.
-- A candidate branch named `evolution/<id>`, based on the stable checkout's current HEAD.
-- An immutable-by-convention task and plan under the candidate's ignored `.agent-runs/evolution/<id>/` directory.
-- A run journal, Agent logs, acceptance-check logs, and review evidence under the same run directory.
+```text
+../.EasyProject-evolution/
+└── m35-first-run/
+    ├── candidate/     # candidate Git worktree
+    └── runtime/       # task, plan, journal, logs, evidence, nested worktrees
+```
 
-The candidate's own `scripts/agent-orchestrate.py` and `scripts/agent-run.py` execute the task. The Agent receives repository-write permission only inside its nested task worktree. Network, secret access, and external side effects are denied by the Task Envelope.
+The candidate branch is named `evolution/<id>` and is based on the stable checkout's current HEAD. The candidate's own `scripts/agent-orchestrate.py` and `scripts/agent-run.py` execute the task. The Agent receives repository-write permission only inside its nested task worktree. Network, secret access, and external side effects are denied by the Task Envelope.
 
 ## Review and integrate inside the candidate
 
-After the real Agent run reaches `awaiting_review`, inspect the handoff, diff, logs, and evidence. Then:
+After the real Agent run reaches `awaiting_review`, inspect the handoff, diff, logs, and evidence in the external `runtime/` directory. Then:
 
 ```bash
 python3 scripts/evolution.py run --id m35-first-run status
@@ -50,7 +52,7 @@ To resume a retryable task, use `resume`. Approval and integration are separate 
 After integration, run the full repository validation in the candidate checkout:
 
 ```bash
-cd ../.EasyProject-evolution/m35-first-run
+cd ../.EasyProject-evolution/m35-first-run/candidate
 python3 -m unittest discover --start-directory tests --pattern 'test_*.py'
 bash scripts/validate-repo.sh
 git status --short
@@ -64,10 +66,15 @@ Review the complete candidate diff against the stable base. Push the candidate b
 - Stable checkout: creates the candidate, remains unchanged, and retains the known-good runtime.
 - Candidate checkout: runs the candidate version of the runtime.
 - Agent task worktree: receives code edits and automated acceptance checks.
+- External runtime directory: stores mutable task inputs, journal, logs, evidence, and nested task worktrees.
 - Human gate: review evidence, approve, then integrate into the candidate branch.
 - Promotion: human review and normal CI/PR policy are required before candidate code reaches `main`.
 
-The candidate is intentionally retained for inspection. Do not delete a candidate or its worktrees until its evidence has been reviewed and any needed artifacts have been preserved.
+The candidate and runtime directories are intentionally retained for inspection. Do not delete them until evidence has been reviewed and any needed artifacts have been preserved.
+
+## Template cleanliness and bootstrap verification
+
+Run `python3 scripts/check-template-cleanliness.py` to ensure generated Evolution runtime directories have not been committed. The repository validation workflow runs this check in a fresh CI checkout. Bootstrap dry-run and idempotency are covered by the bootstrap end-to-end tests.
 
 ## Limitations
 
