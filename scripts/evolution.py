@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
 import platform
 import re
@@ -18,6 +19,20 @@ from typing import Sequence
 ROOT = Path(__file__).resolve().parents[1]
 HARNESS_BINARIES = {"codex": "codex", "claude-code": "claude"}
 CHECK_IDS = ("python-unittest", "pytest", "swift-test", "cargo-test", "npm-test", "go-test", "repo-validation")
+
+
+def approval_payload(wrapper: dict) -> dict:
+    """Return the fields covered by the non-authenticating approval integrity digest."""
+    return {key: value for key, value in wrapper.items()
+            if key != "approval_sha256"}
+
+
+def compute_approval_digest(wrapper: dict) -> str:
+    canonical = json.dumps(
+        approval_payload(wrapper), ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def git(*args: str, cwd: Path = ROOT) -> str:
@@ -215,8 +230,13 @@ def load_approved_task(task_file: Path, run_id: str, harness: str,
     """Load a human-promoted task and revalidate its source evidence before execution."""
     root = root.resolve()
     wrapper = json.loads(task_file.read_text(encoding="utf-8"))
-    if wrapper.get("promotion_version") != "1.0":
-        raise ValueError("task file is not a supported human-promotion artifact")
+    if wrapper.get("promotion_version") != "1.1":
+        raise ValueError("task file is not a supported human-promotion artifact; regenerate with promotion v1.1")
+    supplied_digest = wrapper.get("approval_sha256")
+    if not isinstance(supplied_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", supplied_digest):
+        raise ValueError("approved task integrity digest is missing or invalid")
+    if not hmac.compare_digest(supplied_digest, compute_approval_digest(wrapper)):
+        raise ValueError("approved task integrity check failed; regenerate and review the artifact")
     if wrapper.get("approval_mode") != "write-enabled":
         raise ValueError("approved task artifact must use write-enabled approval mode")
     if not wrapper.get("approval_note"):
@@ -280,6 +300,7 @@ def load_approved_task(task_file: Path, run_id: str, harness: str,
         "marker": marker,
         "file_sha256": evidence["file_sha256"],
         "base_sha": current_sha,
+        "approval_sha256": supplied_digest,
     }
 
 

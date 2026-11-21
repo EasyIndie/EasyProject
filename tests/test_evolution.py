@@ -14,6 +14,11 @@ assert SPEC.loader is not None
 SPEC.loader.exec_module(evolution)
 
 
+def wrapper_digest(artifact: Path) -> str:
+    wrapper = json.loads(artifact.read_text(encoding="utf-8"))
+    return evolution.compute_approval_digest(wrapper)
+
+
 class EvolutionContractTests(unittest.TestCase):
     def test_run_id_is_restricted_to_safe_path_characters(self):
         self.assertEqual(evolution.validate_run_id("m35-first-run"), "m35-first-run")
@@ -116,7 +121,7 @@ class EvolutionContractTests(unittest.TestCase):
             "acceptance_checks": ["python-unittest"],
         }
         wrapper = {
-            "promotion_version": "1.0",
+            "promotion_version": "1.1",
             "approved_at": "2026-11-22T00:00:00+00:00",
             "approval_note": "Reviewed and approved.",
             "approval_mode": "write-enabled",
@@ -130,6 +135,7 @@ class EvolutionContractTests(unittest.TestCase):
             },
             "task": task,
         }
+        wrapper["approval_sha256"] = evolution.compute_approval_digest(wrapper)
         artifact = root.parent / "approved-task.json"
         artifact.write_text(json.dumps(wrapper), encoding="utf-8")
         return source, artifact, task_id, wrapper
@@ -143,12 +149,34 @@ class EvolutionContractTests(unittest.TestCase):
             self.assertEqual(task["preferred_harness"], "codex")
             self.assertTrue(task["permissions"]["repository_write"])
             self.assertEqual(evidence["path"], "src/sample.py")
+            self.assertEqual(
+                evidence["approval_sha256"], wrapper_digest(artifact)
+            )
+
+    def test_rejects_task_content_modified_after_approval(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            _, artifact, task_id, wrapper = self.make_approved_artifact(root)
+            wrapper["task"]["objective"] = "A different, unreviewed objective."
+            artifact.write_text(json.dumps(wrapper), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "integrity check failed"):
+                evolution.load_approved_task(artifact, task_id, "codex", root)
+
+    def test_rejects_missing_approval_digest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            _, artifact, task_id, wrapper = self.make_approved_artifact(root)
+            wrapper.pop("approval_sha256")
+            artifact.write_text(json.dumps(wrapper), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "digest is missing"):
+                evolution.load_approved_task(artifact, task_id, "codex", root)
 
     def test_rejects_read_only_promotion_artifact(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "repo"
             _, artifact, task_id, wrapper = self.make_approved_artifact(root)
             wrapper["approval_mode"] = "read-only"
+            wrapper["approval_sha256"] = evolution.compute_approval_digest(wrapper)
             artifact.write_text(json.dumps(wrapper), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "write-enabled"):
                 evolution.load_approved_task(artifact, task_id, "codex", root)
@@ -178,6 +206,7 @@ class EvolutionContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "run ID"):
                 evolution.load_approved_task(artifact, "different-id", "codex", root)
             wrapper["task"]["permissions"]["network_access"] = True
+            wrapper["approval_sha256"] = evolution.compute_approval_digest(wrapper)
             artifact.write_text(json.dumps(wrapper), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "cannot enable network"):
                 evolution.load_approved_task(artifact, task_id, "codex", root)

@@ -50,6 +50,14 @@ python3 scripts/evolution.py start \
 Evolution rechecks the approval mode, base SHA, tracked source path, file hash,
 marker location, task ID, permissions, and Task Envelope schema before creating
 the candidate worktree. It then starts the normal isolated Agent workflow.
+
+The promotion artifact uses format version 1.1 and includes a SHA-256 digest
+covering its approval fields, evidence, and complete Task Envelope. Evolution
+rejects artifacts whose covered content has changed. This detects accidental
+post-approval edits; it is **not a digital signature or identity proof**. A
+person able to rewrite the artifact and recompute its digest can still create
+a different artifact, so review and protect the file as an approval record.
+Older version 1.0 artifacts must be regenerated before execution.
 This is a real Agent execution and should only be run locally after reviewing
 the task and confirming the selected CLI configuration. Evolution still does
 not push, create remote PRs, merge, deploy, or publish.
