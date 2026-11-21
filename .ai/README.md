@@ -9,6 +9,7 @@ This directory contains shared project context, rules, role contracts, workflows
 3. Read only the rules relevant to the task under `rules/`.
 4. Choose the smallest suitable workflow under `workflows/`.
 5. Use role contracts under `agents/` when work is delegated or handed off.
+6. If this is the canonical EasyProject template repository, follow the [local template maintenance and self-evolution playbook](runtime/evolution/AGENT-PLAYBOOK.md). Do not apply that workflow to generated projects or forks by default.
 
 ## Structure
 
@@ -32,4 +33,4 @@ This directory contains shared project context, rules, role contracts, workflows
 - Keep durable project knowledge; avoid duplicating transient chat history.
 - Do not create empty documentation or folders just to satisfy a convention.
 
-See [agent contracts](agents/README.md) and [workflow selection](workflows/README.md).
+See [agent contracts](agents/README.md), [workflow selection](workflows/README.md), and the [self-evolution runtime](runtime/evolution/README.md).
