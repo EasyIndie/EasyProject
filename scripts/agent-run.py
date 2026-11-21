@@ -78,12 +78,21 @@ def build_command(harness: str, task: dict, prompt: str) -> list[str]:
     raise ValueError(f"Unsupported harness: {harness}")
 
 
+
+def resolve_workspace(path: Path) -> Path:
+    workspace = path.resolve()
+    if not workspace.is_dir():
+        raise ValueError(f"Workspace directory does not exist: {workspace}")
+    return workspace
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", required=True, type=Path, help="Path to a task envelope JSON file")
     parser.add_argument("--harness", required=True, choices=("pi", "codex", "claude-code"))
     parser.add_argument("--timeout", type=int, help="Override task timeout in minutes")
     parser.add_argument("--output", type=Path, help="Write raw stdout/stderr and a handoff draft to this JSON file")
+    parser.add_argument("--cwd", type=Path, default=ROOT, help="Repository workspace in which the agent process runs")
     args = parser.parse_args(argv)
 
     try:
@@ -93,6 +102,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ValueError(f"Required executable not found on PATH: {executable}")
         prompt = build_prompt(task)
         command = build_command(args.harness, task, prompt)
+        workspace = resolve_workspace(args.cwd)
     except (ValueError, OSError, KeyError) as exc:
         print(f"agent-run: {exc}", file=sys.stderr)
         return 2
@@ -105,7 +115,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         completed = subprocess.run(
             command,
-            cwd=ROOT,
+            cwd=workspace,
             text=True,
             capture_output=True,
             timeout=timeout * 60,

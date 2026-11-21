@@ -6,6 +6,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -71,6 +72,43 @@ class OrchestratorTests(unittest.TestCase):
             self.assertIn("READY a:", output.getvalue())
             self.assertIn("READY b:", output.getvalue())
             self.assertFalse((runs_dir / "orchestrator-state.json").exists())
+
+
+    def test_task_ids_are_safe_path_components(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "plan.json"
+            path.write_text(json.dumps(plan([item("../escape")])))
+            with self.assertRaisesRegex(ValueError, "Invalid or duplicate"):
+                orchestrator.load_plan(path)
+
+    def test_worktree_is_created_and_reused_for_same_task(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            root.mkdir()
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)
+            (root / "README.md").write_text("fixture\\n")
+            subprocess.run(["git", "-C", str(root), "add", "README.md"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "initial"], check=True)
+            record = {"worktree": None, "base_commit": None}
+            runs = Path(tmp) / "runs"
+            worktree = orchestrator.prepare_worktree(root, runs, "task-one", record)
+            self.assertTrue((worktree / "README.md").is_file())
+            self.assertFalse(worktree.is_relative_to(root))
+            self.assertEqual(orchestrator.prepare_worktree(root, runs, "task-one", record), worktree)
+            top = subprocess.run(["git", "-C", str(worktree), "rev-parse", "--show-toplevel"],
+                                 check=True, capture_output=True, text=True).stdout.strip()
+            self.assertEqual(top, str(worktree))
+
+    def test_worktree_rejects_missing_recorded_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            root.mkdir()
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            record = {"worktree": str(Path(tmp) / "missing"), "base_commit": "deadbeef"}
+            with self.assertRaisesRegex(ValueError, "recorded worktree is missing"):
+                orchestrator.prepare_worktree(root, Path(tmp) / "runs", "task-one", record)
 
     def test_approval_requires_review_state_and_handoff(self):
         with tempfile.TemporaryDirectory() as tmp:

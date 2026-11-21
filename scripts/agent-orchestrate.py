@@ -7,7 +7,9 @@ A task is not considered complete until a human explicitly approves its handoff.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -39,7 +41,7 @@ def load_plan(path: Path) -> dict[str, Any]:
         if not isinstance(item, dict):
             raise ValueError("Each plan task must be an object.")
         task_id = item.get("task_id")
-        if not isinstance(task_id, str) or not task_id.strip() or task_id in ids:
+        if not isinstance(task_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", task_id) or task_id in ids:
             raise ValueError(f"Invalid or duplicate task_id: {task_id!r}")
         ids.add(task_id)
         if not isinstance(item.get("task_file"), str) or not item["task_file"]:
@@ -85,21 +87,71 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
     temp.replace(path)
 
 
-def initial_state(plan: dict[str, Any]) -> dict[str, Any]:
+def initial_state(plan: dict[str, Any], use_worktrees: bool = False) -> dict[str, Any]:
     return {
         "protocol_version": "1.0",
+        "worktrees_enabled": use_worktrees,
         "updated_at": now(),
         "tasks": {
             item["task_id"]: {
                 "status": "pending", "attempts": 0, "handoff": None,
-                "last_exit_code": None, "updated_at": now()
+                "last_exit_code": None, "worktree": None, "base_commit": None, "updated_at": now()
             }
             for item in plan["tasks"]
         },
     }
 
 
-def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any]) -> int:
+
+def git_output(repo: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", *args], cwd=repo, text=True, capture_output=True, check=False
+    )
+    if result.returncode:
+        raise ValueError("git command failed: " + result.stderr.strip())
+    return result.stdout.strip()
+
+
+def prepare_worktree(repo: Path, runs_dir: Path, task_id: str,
+                     record: dict[str, Any]) -> Path:
+    """Create or validate a detached worktree dedicated to one task."""
+    if record.get("worktree"):
+        path = Path(record["worktree"]).resolve()
+        if not path.is_dir():
+            raise ValueError(task_id + ": recorded worktree is missing; inspect journal before recovery.")
+        top = Path(git_output(path, "rev-parse", "--show-toplevel")).resolve()
+        common = Path(git_output(path, "rev-parse", "--git-common-dir"))
+        if not common.is_absolute():
+            common = (path / common).resolve()
+        else:
+            common = common.resolve()
+        expected_common = Path(git_output(repo, "rev-parse", "--git-common-dir"))
+        if not expected_common.is_absolute():
+            expected_common = (repo / expected_common).resolve()
+        else:
+            expected_common = expected_common.resolve()
+        if top != path or common != expected_common:
+            raise ValueError(task_id + ": recorded path is not a worktree of this repository.")
+        return path
+
+    run_key = hashlib.sha256(str(runs_dir.resolve()).encode("utf-8")).hexdigest()[:12]
+    path = (repo.parent / ("." + repo.name + "-agent-worktrees") / run_key / task_id).resolve()
+    if path.exists():
+        raise ValueError(task_id + ": worktree path already exists but is not recorded: " + str(path))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    base_commit = git_output(repo, "rev-parse", "HEAD")
+    result = subprocess.run(
+        ["git", "worktree", "add", "--detach", str(path), base_commit],
+        cwd=repo, text=True, capture_output=True, check=False,
+    )
+    if result.returncode:
+        raise ValueError(task_id + ": cannot create worktree: " + result.stderr.strip())
+    record["worktree"] = str(path)
+    record["base_commit"] = base_commit
+    return path
+
+
+def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_worktrees: bool) -> int:
     by_id = {item["task_id"]: item for item in plan["tasks"]}
     state_path = runs_dir / "orchestrator-state.json"
     progress = True
@@ -126,10 +178,11 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any]) -> int
             attempt = record["attempts"] + 1
             task_output = runs_dir / task_id / f"attempt-{attempt}.handoff.json"
             task_output.parent.mkdir(parents=True, exist_ok=True)
+            workspace = prepare_worktree(ROOT, runs_dir, task_id, record) if use_worktrees else ROOT
             command = [
                 sys.executable, str(RUNNER), "--task", str(task_path),
                 "--harness", item.get("harness", "codex"),
-                "--output", str(task_output),
+                "--output", str(task_output), "--cwd", str(workspace),
             ]
             record.update(status="running", attempts=attempt, updated_at=now())
             state["updated_at"] = now()
@@ -179,7 +232,8 @@ def main() -> int:
     parser.add_argument("--runs-dir", type=Path, default=Path(".agent-runs/orchestrator"))
     parser.add_argument("--resume", action="store_true", help="Resume from the existing run journal.")
     parser.add_argument("--approve", metavar="TASK_ID", help="Approve a reviewed task handoff.")
-    parser.add_argument("--dry-run", action="store_true", help="Validate and display ready tasks without invoking agents.")
+    parser.add_argument("--dry-run", action="store_true", help="Validate and display the DAG without creating journals or worktrees.")
+    parser.add_argument("--worktrees", action="store_true", help="Run each task in its own detached Git worktree.")
     args = parser.parse_args()
     try:
         plan = load_plan(args.plan)
@@ -188,22 +242,25 @@ def main() -> int:
         if args.dry_run:
             for item in plan["tasks"]:
                 dependencies = ", ".join(item.get("depends_on", [])) or "none"
-                print(f"READY {item['task_id']}: {item['task_file']} [{item.get('harness', 'codex')}] depends_on={dependencies}")
+                isolation = "worktree" if args.worktrees else "shared-workspace"
+                print(f"READY {item['task_id']}: {item['task_file']} [{item.get('harness', 'codex')}] depends_on={dependencies} isolation={isolation}")
             return 0
         if args.resume:
             state = json.loads(state_path.read_text(encoding="utf-8"))
             if set(state.get("tasks", {})) != {item["task_id"] for item in plan["tasks"]}:
                 raise ValueError("Existing journal does not match this plan's task IDs.")
+            if state.get("worktrees_enabled", False) != args.worktrees:
+                raise ValueError("Resume must use the same --worktrees setting as the original run.")
         else:
             if state_path.exists():
                 raise ValueError(f"Run journal already exists: {state_path}; use --resume or choose another --runs-dir.")
-            state = initial_state(plan)
+            state = initial_state(plan, args.worktrees)
             save_state(state_path, state)
         if args.approve:
             approve(args.approve, state, state_path)
             print(f"{args.approve}: completed (human-approved)")
             return 0
-        return run_plan(plan, runs_dir, state)
+        return run_plan(plan, runs_dir, state, args.worktrees)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"agent-orchestrate: {exc}", file=sys.stderr)
         return 2

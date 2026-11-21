@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -23,6 +24,14 @@ def task(write: bool = False) -> dict:
 
 
 class AgentRunnerTests(unittest.TestCase):
+
+    def test_workspace_path_is_resolved_and_must_exist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = agent_run.resolve_workspace(Path(tmp))
+            self.assertEqual(workspace, Path(tmp).resolve())
+            with self.assertRaisesRegex(ValueError, "does not exist"):
+                agent_run.resolve_workspace(Path(tmp) / "missing")
+
     def test_codex_uses_workspace_scoped_sandbox(self) -> None:
         command = agent_run.build_command("codex", task(write=True), "prompt")
         self.assertIn("workspace-write", command)
