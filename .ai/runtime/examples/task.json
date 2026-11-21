@@ -1,0 +1,26 @@
+{
+  "protocol_version": "1.0",
+  "task_id": "EP-EXAMPLE-001",
+  "issue": null,
+  "objective": "Add a focused unit test for the date parser.",
+  "context": ["Read AGENTS.md", "Follow existing test conventions."],
+  "inputs": ["src/date_parser.py", "tests/"],
+  "constraints": ["Do not change public behavior.", "Do not add dependencies."],
+  "acceptance_criteria": [
+    "A regression test covers the reported edge case.",
+    "The relevant test suite passes."
+  ],
+  "risk": "low",
+  "permissions": {
+    "repository_read": true,
+    "repository_write": true,
+    "network_access": false,
+    "secret_access": false,
+    "external_side_effects": false
+  },
+  "preferred_role": "developer",
+  "preferred_harness": "any",
+  "model_hint": null,
+  "timeout_minutes": 20,
+  "metadata": {}
+}
