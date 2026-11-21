@@ -15,6 +15,10 @@ required_files=(
   "tests/test_bootstrap.py"
   "tests/test_agent_contract.py"
   "tests/test_agent_runner.py"
+  "tests/test_agent_orchestrator.py"
+  "scripts/agent-orchestrate.py"
+  ".ai/runtime/orchestrator/README.md"
+  ".ai/runtime/examples/plan.json"
   "scripts/agent-run.py"
   ".ai/runtime/schemas/task.schema.json"
   ".ai/runtime/schemas/handoff.schema.json"
@@ -42,6 +46,8 @@ ast.parse(Path("scripts/bootstrap.py").read_text(encoding="utf-8"))
 ast.parse(Path("tests/test_bootstrap.py").read_text(encoding="utf-8"))
 ast.parse(Path("scripts/agent-run.py").read_text(encoding="utf-8"))
 ast.parse(Path("tests/test_agent_runner.py").read_text(encoding="utf-8"))
+ast.parse(Path("scripts/agent-orchestrate.py").read_text(encoding="utf-8"))
+ast.parse(Path("tests/test_agent_orchestrator.py").read_text(encoding="utf-8"))
 print("Python syntax: OK")
 PY
 
