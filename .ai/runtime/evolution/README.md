@@ -7,7 +7,7 @@ EasyProject self-evolution uses two nested isolation boundaries:
 
 The stable checkout is never the Agent's write workspace. The candidate branch is not merged or pushed automatically. **All mutable run data is stored outside both Git worktrees**, so task envelopes, plans, journals, logs, and evidence cannot pollute the template or candidate source tree.
 
-## Discover and approve a candidate
+## Discover, approve, and execute a candidate
 
 Run the read-only discovery scan:
 
@@ -31,16 +31,35 @@ python3 scripts/agent-task-approve.py \
   --output ../approved-task.json
 ```
 
-The approval tool revalidates the repository base SHA, tracked source path, file hash,
-and marker location. It validates the promoted Task Envelope against the schema.
-Without `--approve-write`, the task stays read-only; with it, only repository-write
-permission is enabled. Network, secret access, and external side effects remain denied.
-The tool does not launch an Agent. Inspect the generated task before separately
-starting an Evolution run.
+Then explicitly submit the approved artifact to Evolution. The run ID must match
+the candidate Task Envelope ID:
+
+```bash
+python3 scripts/evolution.py start \
+  --id DISC-0123456789ab \
+  --approved-task ../approved-task.json \
+  --harness codex
+```
+
+Evolution revalidates the artifact's approval mode, repository base SHA, tracked
+source path, file hash, marker location, task ID, permissions, and schema. The
+Agent runs in the candidate's nested worktree. Network, secret access, and
+external side effects remain denied. This command starts a real Agent, so run
+it only after inspecting the task and confirming the local CLI configuration.
 
 See [the discovery and approval contract](../discovery/README.md) for full semantics.
 
-## Start a real evolution run
+## Start a generic self-evolution task
+
+For tasks not originating from discovery, use an explicit goal:
+
+```bash
+python3 scripts/evolution.py start \
+  --id m35-first-run \
+  --harness codex \
+  --goal "Implement the next approved EasyProject self-evolution capability" \
+  --check python-unittest
+```
 
 Requirements:
 
@@ -55,17 +74,7 @@ First run the non-mutating prerequisite check. It verifies the Git checkout, cle
 python3 scripts/evolution.py doctor --harness codex
 ```
 
-Then start a run:
-
-```bash
-python3 scripts/evolution.py start \
-  --id m35-first-run \
-  --harness codex \
-  --goal "Implement the next approved EasyProject self-evolution capability" \
-  --check python-unittest
-```
-
-The external runtime directory also contains `manifest.json`, which records the stable base SHA, branch, CLI version, Python/jsonschema versions, goal, and configured checks. It never records credential values.
+The external runtime directory also contains `manifest.json`, which records the stable base SHA, branch, CLI version, Python/jsonschema versions, goal, task source, and configured checks. It never records credential values.
 
 Print a concise report from the manifest and orchestrator journal at any time:
 
