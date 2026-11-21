@@ -41,6 +41,13 @@ class AgentContractTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             Draft202012Validator(schema).validate(task)
 
+    def test_task_rejects_unknown_metadata_fields(self) -> None:
+        schema = self.load_json("schemas/task.schema.json")
+        task = self.load_json("examples/task.json")
+        task["metadata"]["api_key"] = "must-not-be-accepted"
+        with self.assertRaises(ValidationError):
+            Draft202012Validator(schema).validate(task)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
