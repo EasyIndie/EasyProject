@@ -14,26 +14,22 @@ required_files=(
   "scripts/bootstrap.py"
 )
 
-missing=0
 for file in "${required_files[@]}"; do
   if [[ ! -s "$file" ]]; then
     echo "::error file=$file::Required foundation file is missing or empty"
-    missing=1
+    exit 1
   fi
 done
 
-if [[ "$missing" -ne 0 ]]; then
-  exit 1
-fi
-
 python3 - <<'PY'
-from pathlib import Path
 import ast
-
+from pathlib import Path
 ast.parse(Path("scripts/bootstrap.py").read_text(encoding="utf-8"))
 print("Python bootstrap syntax: OK")
 PY
 
+python3 scripts/bootstrap.py --help >/dev/null
+python3 scripts/bootstrap.py --yes --dry-run --name "CI Sample" --description "Bootstrap smoke test" >/dev/null
 bash -n bootstrap.sh
 bash -n scripts/validate-repo.sh
 echo "Repository foundation validation: OK"
