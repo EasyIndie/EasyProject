@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import re
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
@@ -40,6 +42,110 @@ def candidate_paths(run_id: str) -> tuple[Path, str, Path]:
     branch = f"evolution/{run_id}"
     run_dir = run_root / "runtime"
     return candidate, branch, run_dir
+
+
+def preflight(harness: str) -> dict:
+    """Inspect local prerequisites without reading credentials or invoking an Agent."""
+    if harness not in HARNESS_BINARIES:
+        raise ValueError(f"unsupported harness: {harness}")
+    if git("rev-parse", "--is-inside-work-tree") != "true":
+        raise ValueError("current directory is not a Git worktree")
+    branch = git("branch", "--show-current")
+    if not branch:
+        raise ValueError("stable checkout must be on a named branch, not detached HEAD")
+    if git("status", "--porcelain=v1"):
+        raise ValueError("stable checkout must be clean before starting an evolution run")
+    binary = HARNESS_BINARIES[harness]
+    executable = shutil.which(binary)
+    if executable is None:
+        raise ValueError(f"Agent CLI not found on PATH: {binary}")
+    try:
+        import jsonschema
+        jsonschema_version = getattr(jsonschema, "__version__", "installed")
+    except ImportError as exc:
+        raise ValueError("install jsonschema in the active Python environment first") from exc
+    version = subprocess.run(
+        [executable, "--version"], text=True, capture_output=True,
+        check=False, timeout=10,
+    )
+    if version.returncode:
+        raise ValueError(f"{binary} --version failed: {version.stderr.strip()}")
+    return {
+        "status": "ready",
+        "repository": str(ROOT),
+        "branch": branch,
+        "head": git("rev-parse", "HEAD"),
+        "working_tree": "clean",
+        "python": platform.python_version(),
+        "jsonschema": jsonschema_version,
+        "harness": harness,
+        "harness_executable": executable,
+        "harness_version": (version.stdout or version.stderr).strip(),
+    }
+
+
+def write_manifest(run_dir: Path, run_id: str, goal: str,
+                   harness: str, checks: list[str], preflight_result: dict) -> Path:
+    manifest = {
+        "manifest_version": "1.0",
+        "run_id": run_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "goal": goal.strip(),
+        "harness": harness,
+        "acceptance_checks": checks,
+        "stable": {
+            "repository": str(ROOT),
+            "branch": preflight_result["branch"],
+            "base_sha": preflight_result["head"],
+        },
+        "candidate": {
+            "branch": f"evolution/{run_id}",
+            "path": str(candidate_paths(run_id)[0]),
+        },
+        "runtime_directory": str(run_dir),
+        "environment": {
+            "python": preflight_result["python"],
+            "jsonschema": preflight_result["jsonschema"],
+            "harness_version": preflight_result["harness_version"],
+        },
+        "credential_values_recorded": False,
+    }
+    run_dir.mkdir(parents=True, exist_ok=True)
+    path = run_dir / "manifest.json"
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def build_report(run_dir: Path) -> dict:
+    manifest_path = run_dir / "manifest.json"
+    if not manifest_path.is_file():
+        raise ValueError(f"Evolution manifest not found: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    state_path = run_dir / "orchestrator" / "orchestrator-state.json"
+    if not state_path.is_file():
+        return {"manifest": manifest, "execution": {"status": "not_started", "tasks": {}}}
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    tasks = {}
+    for task_id, record in state.get("tasks", {}).items():
+        checks = record.get("automated_checks", {})
+        tasks[task_id] = {
+            "status": record.get("status", "unknown"),
+            "attempts": record.get("attempts", 0),
+            "automated_checks": checks.get("status", "not_recorded"),
+            "handoff_exists": bool(record.get("handoff") and Path(record["handoff"]).is_file()),
+            "review_evidence_exists": bool(
+                record.get("review_evidence") and Path(record["review_evidence"]).is_file()
+            ),
+            "termination_reason": record.get("termination_reason"),
+        }
+    return {
+        "manifest": manifest,
+        "execution": {
+            "status": "recorded",
+            "updated_at": state.get("updated_at"),
+            "tasks": tasks,
+        },
+    }
 
 
 def make_task(run_id: str, goal: str, harness: str,
@@ -133,15 +239,7 @@ def start(args: argparse.Namespace) -> int:
     run_id = validate_run_id(args.id)
     if git("status", "--porcelain=v1"):
         raise ValueError("stable checkout must be clean before starting an evolution run")
-    if not git("branch", "--show-current"):
-        raise ValueError("stable checkout must be on a named branch, not detached HEAD")
-    if shutil.which(HARNESS_BINARIES[args.harness]) is None:
-        raise ValueError(f"Agent CLI not found on PATH: {HARNESS_BINARIES[args.harness]}")
-    try:
-        import jsonschema  # noqa: F401
-    except ImportError as exc:
-        raise ValueError("install jsonschema in the active Python environment first") from exc
-
+    environment = preflight(args.harness)
     candidate, branch, run_dir = candidate_paths(run_id)
     run_root = candidate.parent
     if run_root.exists():
@@ -153,8 +251,10 @@ def start(args: argparse.Namespace) -> int:
     run_root.mkdir(parents=True)
     try:
         git("worktree", "add", "-b", branch, str(candidate), base)
-        task = make_task(run_id, args.goal, args.harness, args.check or ["python-unittest"])
+        checks = args.check or ["python-unittest"]
+        task = make_task(run_id, args.goal, args.harness, checks)
         write_run_inputs(run_dir, run_id, task)
+        write_manifest(run_dir, run_id, args.goal, args.harness, checks, environment)
     except Exception:
         # Keep partial state for diagnosis; never silently delete a worktree or evidence.
         raise
@@ -195,6 +295,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     start_parser.add_argument("--harness", choices=tuple(HARNESS_BINARIES), required=True)
     start_parser.add_argument("--check", choices=CHECK_IDS, action="append",
                               help="allowlisted acceptance check; may be repeated")
+    doctor_parser = subparsers.add_parser("doctor", help="check local prerequisites without starting an Agent")
+    doctor_parser.add_argument("--harness", choices=tuple(HARNESS_BINARIES), required=True)
+    report_parser = subparsers.add_parser("report", help="print the evidence-backed report for a run")
+    report_parser.add_argument("--id", required=True)
     action_parser = subparsers.add_parser("run", help="resume, inspect, approve, or integrate a candidate")
     action_parser.add_argument("--id", required=True)
     action_parser.add_argument("action", choices=("status", "resume", "approve", "integrate", "cancel"))
@@ -202,6 +306,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "start":
             return start(args)
+        if args.command == "doctor":
+            print(json.dumps(preflight(args.harness), ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "report":
+            _, _, run_dir = candidate_paths(args.id)
+            print(json.dumps(build_report(run_dir), ensure_ascii=False, indent=2))
+            return 0
         return continue_run(args)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"evolution: {exc}", file=sys.stderr)
