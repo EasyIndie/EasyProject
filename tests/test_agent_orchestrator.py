@@ -26,8 +26,11 @@ def item(task_id, deps=None):
 
 class OrchestratorTests(unittest.TestCase):
     def test_valid_dag(self):
-        parsed = orchestrator.load_plan_from_data(plan([item("a"), item("b", ["a"])])) if hasattr(orchestrator, "load_plan_from_data") else None
-        self.assertIsNone(parsed)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "plan.json"
+            path.write_text(json.dumps(plan([item("a"), item("b", ["a"])])))
+            loaded = orchestrator.load_plan(path)
+            self.assertEqual([task["task_id"] for task in loaded["tasks"]], ["a", "b"])
 
     def test_unknown_dependency_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
