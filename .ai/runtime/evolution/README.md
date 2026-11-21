@@ -32,7 +32,8 @@ The command creates this sibling directory structure (not inside the repository)
 ../.EasyProject-evolution/
 └── m35-first-run/
     ├── candidate/     # candidate Git worktree
-    └── runtime/       # task, plan, journal, logs, evidence, nested worktrees
+    ├── runtime/       # task, plan, journal, logs, evidence
+    └── .candidate-agent-worktrees/  # nested Agent worktrees (managed by orchestrator)
 ```
 
 The candidate branch is named `evolution/<id>` and is based on the stable checkout's current HEAD. The candidate's own `scripts/agent-orchestrate.py` and `scripts/agent-run.py` execute the task. The Agent receives repository-write permission only inside its nested task worktree. Network, secret access, and external side effects are denied by the Task Envelope.
@@ -66,7 +67,8 @@ Review the complete candidate diff against the stable base. Push the candidate b
 - Stable checkout: creates the candidate, remains unchanged, and retains the known-good runtime.
 - Candidate checkout: runs the candidate version of the runtime.
 - Agent task worktree: receives code edits and automated acceptance checks.
-- External runtime directory: stores mutable task inputs, journal, logs, evidence, and nested task worktrees.
+- External runtime directory: stores mutable task inputs, journal, logs, and evidence.
+- External task-worktree directory: stores nested Agent worktrees, adjacent to the candidate and runtime directories.
 - Human gate: review evidence, approve, then integrate into the candidate branch.
 - Promotion: human review and normal CI/PR policy are required before candidate code reaches `main`.
 
