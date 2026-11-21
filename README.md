@@ -23,7 +23,7 @@
 | [`.ai/rules/`](.ai/rules/) | Shared engineering and safety rules |
 | [`.ai/agents/`](.ai/agents/) | Role contracts and handoff expectations |
 | [`.ai/workflows/`](.ai/workflows/) | Task-sized delivery workflows |
-| [`.ai/runtime/discovery/README.md`](.ai/runtime/discovery/README.md) | Evidence-based, review-only task discovery |
+| [`.ai/runtime/discovery/README.md`](.ai/runtime/discovery/README.md) | Evidence-based discovery and explicit task promotion |
 
 ## Operating model
 
@@ -88,4 +88,4 @@ This template is intentionally domain- and language-neutral. Add project-specifi
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see `LICENSE`.
