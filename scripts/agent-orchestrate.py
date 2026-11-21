@@ -152,7 +152,7 @@ def prepare_worktree(repo: Path, runs_dir: Path, task_id: str,
 
 \n
 def collect_change_evidence(repo: Path, base_commit: str, task_id: str,
-                            runs_dir: Path) -> dict[str, Any]:
+                            runs_dir: Path, persist: bool = True) -> dict[str, Any]:
     """Capture a deterministic review snapshot without staging or committing files."""
     status = git_output(repo, "status", "--porcelain=v1", "--untracked-files=all")
     changed = git_output(repo, "diff", "--name-only", base_commit).splitlines()
@@ -163,14 +163,23 @@ def collect_change_evidence(repo: Path, base_commit: str, task_id: str,
         text=True, capture_output=True, check=False,
     )
     diff = git_output(repo, "diff", "--binary", base_commit)
+    for relative_path in untracked:
+        extra = subprocess.run(
+            ["git", "diff", "--no-index", "--binary", "--", "/dev/null", relative_path],
+            cwd=repo, text=True, capture_output=True, check=False,
+        )
+        if extra.returncode not in {0, 1}:
+            raise ValueError("Cannot capture untracked file diff: " + relative_path)
+        diff += extra.stdout
     stat = git_output(repo, "diff", "--stat", base_commit)
     fingerprint = hashlib.sha256(
         (status + "\\0" + diff + "\\0" + "\\n".join(untracked)).encode("utf-8")
     ).hexdigest()
     evidence_dir = runs_dir / task_id
-    evidence_dir.mkdir(parents=True, exist_ok=True)
     diff_path = evidence_dir / "review.diff"
-    diff_path.write_text(diff, encoding="utf-8")
+    if persist:
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        diff_path.write_text(diff, encoding="utf-8")
     evidence = {
         "protocol_version": "1.0",
         "task_id": task_id,
@@ -191,7 +200,8 @@ def collect_change_evidence(repo: Path, base_commit: str, task_id: str,
         },
     }
     evidence_path = evidence_dir / "review-evidence.json"
-    evidence_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+    if persist:
+        evidence_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
     evidence["evidence_path"] = str(evidence_path)
     return evidence
 
@@ -203,7 +213,7 @@ def verify_change_evidence(repo: Path, record: dict[str, Any]) -> None:
     evidence = json.loads(Path(evidence_path).read_text(encoding="utf-8"))
     current = collect_change_evidence(
         repo, evidence["base_commit"], evidence["task_id"],
-        Path(evidence_path).parent.parent,
+        Path(evidence_path).parent.parent, persist=False,
     )
     if current["fingerprint"] != evidence.get("fingerprint"):
         raise ValueError("Workspace changed after review evidence was captured; inspect and recapture before approval.")
