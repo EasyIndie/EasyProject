@@ -111,14 +111,15 @@ executes the selected harness inside that worktree while loading task/schema
 contracts from the template checkout.
 
 Worktree isolation is filesystem isolation, not a security sandbox. Agent CLI
-permissions still apply. Worktrees are intentionally retained after review so
-uncommitted changes are not lost. Inspect and integrate changes manually; this
-milestone does not commit, cherry-pick, rebase, push, or remove worktrees.
+permissions still apply. Worktrees are intentionally retained after review and
+integration so the original evidence and task branch remain available for audit.
+The explicit `--integrate` action creates a local commit and cherry-picks it; it
+does not rebase, push, create a PR, merge remotely, or remove worktrees.
 
-DAG dependencies currently gate execution order only. A dependent task starts
-from the repository HEAD, not from uncommitted changes in its predecessor's
-worktree. Integrate approved predecessor changes into the base branch before
-starting dependent tasks that need those changes.
+DAG dependencies gate on the `completed` state. For worktree tasks that
+means both human approval and successful local integration. The next dependent
+task is created from the repository HEAD after the predecessor's integration,
+so it can build on the approved predecessor commit.
 
 ## Safety and current limitations
 
