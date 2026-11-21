@@ -380,17 +380,25 @@ def integrate_task(repo: Path, task_id: str, state: dict[str, Any],
     if not is_ancestor(worktree, base_commit, worktree_head):
         raise ValueError("Task worktree HEAD is not based on its recorded base commit.")
 
+    # Agent harnesses may create one or more commits inside their detached
+    # worktree. Collapse the complete reviewed tree back onto the recorded base
+    # so the integration commit cannot omit earlier agent commits.
+    if git_result(worktree, "symbolic-ref", "-q", "HEAD").returncode == 0:
+        raise ValueError("Task worktree is no longer detached; inspect it and restore a detached HEAD before integration.")
     add_result = git_result(worktree, "add", "-A", "--", ".")
     if add_result.returncode:
         raise ValueError("Cannot stage approved worktree changes: " + add_result.stderr.strip())
+    reset_result = git_result(worktree, "reset", "--soft", base_commit)
+    if reset_result.returncode:
+        raise ValueError("Cannot normalize task commits to the recorded base: " + reset_result.stderr.strip())
+
+    evidence = json.loads(Path(record["review_evidence"]).read_text(encoding="utf-8"))
+    staged_files = git_output(worktree, "diff", "--cached", "--name-only").splitlines()
+    if sorted(set(staged_files)) != sorted(evidence.get("changed_files", [])):
+        raise ValueError("Staged file manifest differs from reviewed evidence; recapture and approve the changes again.")
     cached_check = git_result(worktree, "diff", "--cached", "--check")
     if cached_check.returncode:
         raise ValueError("Staged changes failed git diff --cached --check: " + cached_check.stdout + cached_check.stderr)
-
-    evidence = json.loads(Path(record["review_evidence"]).read_text(encoding="utf-8"))
-    staged_files = git_output(worktree, "diff", "--name-only", base_commit).splitlines()
-    if sorted(set(staged_files)) != sorted(evidence.get("changed_files", [])):
-        raise ValueError("Staged file manifest differs from reviewed evidence; recapture and approve the changes again.")
 
     staged = git_result(worktree, "diff", "--cached", "--quiet")
     if staged.returncode not in {0, 1}:
