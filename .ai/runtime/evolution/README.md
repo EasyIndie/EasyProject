@@ -90,7 +90,8 @@ The command creates this sibling directory structure (not inside the repository)
 ../.EasyProject-evolution/
 └── m35-first-run/
     ├── candidate/     # candidate Git worktree
-    ├── runtime/       # task, plan, journal, logs, evidence
+    ├── runtime/       # manifest and plan
+    │   └── orchestrator/  # task envelope, journal, logs, checks, evidence
     └── .candidate-agent-worktrees/  # nested Agent worktrees (managed by orchestrator)
 ```
 
