@@ -184,7 +184,7 @@ def collect_change_evidence(repo: Path, base_commit: str, task_id: str,
             check_output += extra_check.stdout + extra_check.stderr
     stat = git_output(repo, "diff", "--stat", base_commit)
     fingerprint = hashlib.sha256(
-        (status + "\\0" + diff + "\\0" + "\n".join(untracked)).encode("utf-8")
+        (diff + "\\0" + "\n".join(changed_files)).encode("utf-8")
     ).hexdigest()
     evidence_dir = runs_dir / task_id
     diff_path = evidence_dir / "review.diff"
@@ -310,9 +310,142 @@ def approve(task_id: str, state: dict[str, Any], state_path: Path) -> None:
         raise ValueError("A failed handoff cannot be approved.")
     if record.get("worktree"):
         verify_change_evidence(Path(record["worktree"]), record)
-    record.update(status="completed", approved_at=now(), updated_at=now())
+        record.update(status="approved", approved_at=now(), updated_at=now())
+    else:
+        record.update(status="completed", approved_at=now(), updated_at=now())
     state["updated_at"] = now()
     save_state(state_path, state)
+
+
+def git_result(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args], cwd=repo, text=True, capture_output=True, check=False
+    )
+
+
+def is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
+    return git_result(repo, "merge-base", "--is-ancestor", ancestor, descendant).returncode == 0
+
+
+def integrate_task(repo: Path, task_id: str, state: dict[str, Any],
+                   state_path: Path) -> None:
+    """Commit an approved worktree result and cherry-pick it onto the current clean branch."""
+    record = state.get("tasks", {}).get(task_id)
+    if record is None:
+        raise ValueError(f"Unknown task_id: {task_id}")
+    if record.get("status") not in {"approved", "integration_conflict"}:
+        raise ValueError(f"{task_id} is {record.get('status')}; approve it before integration.")
+
+    branch = git_output(repo, "branch", "--show-current")
+    if not branch:
+        raise ValueError("Target repository is in detached HEAD state; check out a branch before integration.")
+    target_head = git_output(repo, "rev-parse", "HEAD")
+
+    if record.get("integration_state") == "conflict":
+        if git_result(repo, "rev-parse", "--verify", "CHERRY_PICK_HEAD").returncode == 0:
+            raise ValueError(
+                "Cherry-pick is still in progress. Resolve conflicts, run "
+                "'git cherry-pick --continue', then rerun --integrate."
+            )
+        parent = record.get("integration_parent")
+        subject = record.get("integration_subject")
+        head_parent = git_result(repo, "rev-parse", "HEAD^")
+        head_subject = git_result(repo, "show", "-s", "--format=%s", "HEAD")
+        if (parent and head_parent.returncode == 0 and head_parent.stdout.strip() == parent
+                and head_subject.returncode == 0 and head_subject.stdout.strip() == subject):
+            record.update(
+                status="completed", integration_state="completed",
+                integrated_at=now(), target_branch=branch, target_commit=target_head,
+            )
+            state["updated_at"] = now()
+            save_state(state_path, state)
+            return
+
+    if git_output(repo, "status", "--porcelain=v1"):
+        raise ValueError("Target repository must have a clean working tree before integration.")
+    worktree_value = record.get("worktree")
+    if not worktree_value:
+        raise ValueError("Task has no isolated worktree; integration requires --worktrees.")
+    worktree = Path(worktree_value).resolve()
+    if not worktree.is_dir():
+        raise ValueError("Recorded task worktree is missing.")
+    base_commit = record.get("base_commit")
+    if not base_commit:
+        raise ValueError("Task journal is missing base_commit.")
+    if not is_ancestor(repo, base_commit, target_head):
+        raise ValueError("Target branch no longer contains the task base commit; rebase/recreate the task deliberately.")
+
+    verify_change_evidence(worktree, record)
+    worktree_head = git_output(worktree, "rev-parse", "HEAD")
+    if not is_ancestor(worktree, base_commit, worktree_head):
+        raise ValueError("Task worktree HEAD is not based on its recorded base commit.")
+
+    # Agent harnesses may create one or more commits inside their detached
+    # worktree. Collapse the complete reviewed tree back onto the recorded base
+    # so the integration commit cannot omit earlier agent commits.
+    if git_result(worktree, "symbolic-ref", "-q", "HEAD").returncode == 0:
+        raise ValueError("Task worktree is no longer detached; inspect it and restore a detached HEAD before integration.")
+    add_result = git_result(worktree, "add", "-A", "--", ".")
+    if add_result.returncode:
+        raise ValueError("Cannot stage approved worktree changes: " + add_result.stderr.strip())
+    reset_result = git_result(worktree, "reset", "--soft", base_commit)
+    if reset_result.returncode:
+        raise ValueError("Cannot normalize task commits to the recorded base: " + reset_result.stderr.strip())
+
+    evidence = json.loads(Path(record["review_evidence"]).read_text(encoding="utf-8"))
+    staged_files = git_output(worktree, "diff", "--cached", "--name-only").splitlines()
+    if sorted(set(staged_files)) != sorted(evidence.get("changed_files", [])):
+        raise ValueError("Staged file manifest differs from reviewed evidence; recapture and approve the changes again.")
+    cached_check = git_result(worktree, "diff", "--cached", "--check")
+    if cached_check.returncode:
+        raise ValueError("Staged changes failed git diff --cached --check: " + cached_check.stdout + cached_check.stderr)
+
+    staged = git_result(worktree, "diff", "--cached", "--quiet")
+    if staged.returncode not in {0, 1}:
+        raise ValueError("Cannot inspect staged changes: " + staged.stderr.strip())
+    if staged.returncode == 1:
+        commit_result = git_result(worktree, "commit", "-m", f"Agent task {task_id}")
+        if commit_result.returncode:
+            raise ValueError("Cannot create integration commit: " + commit_result.stdout + commit_result.stderr)
+    agent_commit = git_output(worktree, "rev-parse", "HEAD")
+
+    if agent_commit == base_commit:
+        record.update(
+            status="completed", integration_state="no_changes",
+            integrated_at=now(), target_branch=branch, target_commit=target_head,
+        )
+        state["updated_at"] = now()
+        save_state(state_path, state)
+        return
+
+    if git_output(repo, "rev-parse", "HEAD") != target_head:
+        raise ValueError("Target branch moved during integration; inspect the repository and retry.")
+    subject = f"Agent task {task_id}"
+    cherry_pick = git_result(repo, "cherry-pick", agent_commit)
+    if cherry_pick.returncode:
+        record.update(
+            status="integration_conflict", integration_state="conflict",
+            integration_commit=agent_commit, integration_parent=target_head,
+            integration_subject=subject,
+            integration_output=cherry_pick.stdout + cherry_pick.stderr, updated_at=now(),
+        )
+        state["updated_at"] = now()
+        save_state(state_path, state)
+        raise ValueError(
+            "Cherry-pick stopped with a conflict. The conflict state is preserved. "
+            "Resolve it manually, run 'git cherry-pick --continue', then rerun --integrate."
+        )
+
+    target_commit = git_output(repo, "rev-parse", "HEAD")
+    record.update(
+        status="completed", integration_state="completed",
+        integration_commit=agent_commit, integrated_at=now(),
+        target_branch=branch, target_commit=target_commit,
+        integration_parent=target_head, integration_subject=subject,
+    )
+    state["updated_at"] = now()
+    save_state(state_path, state)
+
 
 
 def main() -> int:
@@ -320,7 +453,9 @@ def main() -> int:
     parser.add_argument("--plan", required=True, type=Path)
     parser.add_argument("--runs-dir", type=Path, default=Path(".agent-runs/orchestrator"))
     parser.add_argument("--resume", action="store_true", help="Resume from the existing run journal.")
-    parser.add_argument("--approve", metavar="TASK_ID", help="Approve a reviewed task handoff.")
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument("--approve", metavar="TASK_ID", help="Approve a reviewed task handoff.")
+    actions.add_argument("--integrate", metavar="TASK_ID", help="Integrate an approved worktree task into the current branch.")
     parser.add_argument("--dry-run", action="store_true", help="Validate and display the DAG without creating journals or worktrees.")
     parser.add_argument("--worktrees", action="store_true", help="Run each task in its own detached Git worktree.")
     args = parser.parse_args()
@@ -346,8 +481,17 @@ def main() -> int:
             state = initial_state(plan, args.worktrees)
             save_state(state_path, state)
         if args.approve:
+            if not args.resume:
+                raise ValueError("--approve requires --resume.")
             approve(args.approve, state, state_path)
-            print(f"{args.approve}: completed (human-approved)")
+            next_status = state["tasks"][args.approve]["status"]
+            print(f"{args.approve}: {next_status} (human-approved)")
+            return 0
+        if args.integrate:
+            if not args.resume or not args.worktrees:
+                raise ValueError("--integrate requires both --resume and --worktrees.")
+            integrate_task(ROOT, args.integrate, state, state_path)
+            print(f"{args.integrate}: {state['tasks'][args.integrate]['status']} (integration)")
             return 0
         return run_plan(plan, runs_dir, state, args.worktrees)
     except (OSError, ValueError, json.JSONDecodeError) as exc:

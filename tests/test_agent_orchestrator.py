@@ -150,6 +150,103 @@ class OrchestratorTests(unittest.TestCase):
             saved = json.loads(Path(evidence["evidence_path"]).read_text(encoding="utf-8"))
             self.assertEqual(saved["fingerprint"], evidence["fingerprint"])
 
+    def _integration_fixture(self, tmp):
+        root = Path(tmp) / "repo"
+        root.mkdir()
+        subprocess.run(["git", "init", "-q", str(root)], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)
+        (root / "file.txt").write_text("base\\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(root), "add", "file.txt"], check=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-qm", "initial"], check=True)
+        runs = Path(tmp) / "runs"
+        record = {"worktree": None, "base_commit": None}
+        worktree = orchestrator.prepare_worktree(root, runs, "a", record)
+        (worktree / "file.txt").write_text("agent change\\n", encoding="utf-8")
+        (worktree / "new.txt").write_text("new file\\n", encoding="utf-8")
+        evidence = orchestrator.collect_change_evidence(worktree, record["base_commit"], "a", runs)
+        record.update(
+            status="awaiting_review",
+            handoff=str(Path(tmp) / "handoff.json"),
+            review_evidence=evidence["evidence_path"],
+        )
+        Path(record["handoff"]).write_text(json.dumps({"task_id": "a", "status": "partial"}))
+        state = {"updated_at": None, "tasks": {"a": record}}
+        state_path = Path(tmp) / "state.json"
+        orchestrator.approve("a", state, state_path)
+        self.assertEqual(record["status"], "approved")
+        return root, worktree, state, state_path
+
+    def test_approved_worktree_is_committed_and_cherry_picked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, worktree, state, state_path = self._integration_fixture(tmp)
+            orchestrator.integrate_task(root, "a", state, state_path)
+            record = state["tasks"]["a"]
+            self.assertEqual(record["status"], "completed")
+            self.assertEqual(record["integration_state"], "completed")
+            self.assertEqual((root / "file.txt").read_text(encoding="utf-8"), "agent change\\n")
+            self.assertEqual((root / "new.txt").read_text(encoding="utf-8"), "new file\\n")
+            self.assertEqual(orchestrator.git_output(root, "status", "--porcelain=v1"), "")
+            self.assertNotEqual(record["integration_commit"], record["base_commit"])
+
+    def test_integration_includes_agent_commits_and_later_untracked_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            root.mkdir()
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)
+            (root / "file.txt").write_text("base\\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "file.txt"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "initial"], check=True)
+            runs = Path(tmp) / "runs"
+            record = {"worktree": None, "base_commit": None}
+            worktree = orchestrator.prepare_worktree(root, runs, "a", record)
+            (worktree / "file.txt").write_text("agent committed\\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(worktree), "add", "file.txt"], check=True)
+            subprocess.run(["git", "-C", str(worktree), "commit", "-qm", "agent change"], check=True)
+            (worktree / "later.txt").write_text("untracked after commit\\n", encoding="utf-8")
+            evidence = orchestrator.collect_change_evidence(worktree, record["base_commit"], "a", runs)
+            self.assertEqual(evidence["changed_files"], ["file.txt", "later.txt"])
+            record.update(
+                status="awaiting_review",
+                handoff=str(Path(tmp) / "handoff.json"),
+                review_evidence=evidence["evidence_path"],
+            )
+            Path(record["handoff"]).write_text(json.dumps({"task_id": "a", "status": "partial"}))
+            state = {"updated_at": None, "tasks": {"a": record}}
+            state_path = Path(tmp) / "state.json"
+            orchestrator.approve("a", state, state_path)
+            orchestrator.integrate_task(root, "a", state, state_path)
+            self.assertEqual(record["status"], "completed")
+            self.assertEqual((root / "file.txt").read_text(encoding="utf-8"), "agent committed\\n")
+            self.assertEqual((root / "later.txt").read_text(encoding="utf-8"), "untracked after commit\\n")
+
+    def test_integration_conflict_is_preserved_and_can_be_finalized(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, worktree, state, state_path = self._integration_fixture(tmp)
+            (root / "file.txt").write_text("target change\\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "file.txt"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "target change"], check=True)
+            with self.assertRaisesRegex(ValueError, "conflict"):
+                orchestrator.integrate_task(root, "a", state, state_path)
+            record = state["tasks"]["a"]
+            self.assertEqual(record["status"], "integration_conflict")
+            self.assertEqual(
+                orchestrator.git_result(root, "rev-parse", "--verify", "CHERRY_PICK_HEAD").returncode,
+                0,
+            )
+            (root / "file.txt").write_text("manually resolved\\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "file.txt"], check=True)
+            subprocess.run(
+                ["git", "-C", str(root), "-c", "core.editor=true", "cherry-pick", "--continue"],
+                check=True,
+            )
+            orchestrator.integrate_task(root, "a", state, state_path)
+            self.assertEqual(record["status"], "completed")
+            self.assertEqual(record["integration_state"], "completed")
+            self.assertEqual((root / "file.txt").read_text(encoding="utf-8"), "manually resolved\\n")
+
     def test_approval_requires_review_state_and_handoff(self):
         with tempfile.TemporaryDirectory() as tmp:
             state_path = Path(tmp) / "state.json"
