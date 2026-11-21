@@ -29,6 +29,43 @@ def item(task_id, deps=None):
 
 
 class OrchestratorTests(unittest.TestCase):
+    def test_allowlisted_acceptance_check_runs_and_persists_logs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            (workspace / "tests").mkdir(parents=True)
+            (workspace / "tests" / "test_sample.py").write_text(
+                "import unittest\\nclass SampleTests(unittest.TestCase):\\n"
+                "    def test_ok(self): self.assertTrue(True)\\n",
+                encoding="utf-8",
+            )
+            result = orchestrator.run_acceptance_checks(
+                ["python-unittest"], workspace, Path(tmp) / "runs", "task-a", 1
+            )
+            self.assertEqual(result["status"], "passed")
+            self.assertEqual(result["results"][0]["result"], "passed")
+            self.assertTrue(Path(result["results"][0]["stdout_path"]).is_file())
+            self.assertTrue(Path(result["results"][0]["stderr_path"]).is_file())
+
+    def test_failed_acceptance_check_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            (workspace / "tests").mkdir(parents=True)
+            (workspace / "tests" / "test_failure.py").write_text(
+                "import unittest\\nclass FailureTests(unittest.TestCase):\\n"
+                "    def test_fail(self): self.fail('expected failure')\\n",
+                encoding="utf-8",
+            )
+            result = orchestrator.run_acceptance_checks(
+                ["python-unittest"], workspace, Path(tmp) / "runs", "task-a", 1
+            )
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["results"][0]["result"], "failed")
+            self.assertNotEqual(result["results"][0]["exit_code"], 0)
+
+    def test_unknown_acceptance_check_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "Unsupported acceptance check"):
+            orchestrator.acceptance_command("arbitrary-shell")
+
     def test_valid_dag(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "plan.json"
