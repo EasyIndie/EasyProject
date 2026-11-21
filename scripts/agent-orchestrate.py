@@ -162,6 +162,8 @@ def collect_change_evidence(repo: Path, base_commit: str, task_id: str,
         ["git", "diff", "--check", base_commit], cwd=repo,
         text=True, capture_output=True, check=False,
     )
+    check_output = diff_check.stdout + diff_check.stderr
+    check_failed = diff_check.returncode != 0
     diff = git_output(repo, "diff", "--binary", base_commit)
     for relative_path in untracked:
         extra = subprocess.run(
@@ -171,6 +173,15 @@ def collect_change_evidence(repo: Path, base_commit: str, task_id: str,
         if extra.returncode not in {0, 1}:
             raise ValueError("Cannot capture untracked file diff: " + relative_path)
         diff += extra.stdout
+        extra_check = subprocess.run(
+            ["git", "diff", "--no-index", "--check", "--", "/dev/null", relative_path],
+            cwd=repo, text=True, capture_output=True, check=False,
+        )
+        if extra_check.returncode not in {0, 1}:
+            raise ValueError("Cannot check untracked file whitespace: " + relative_path)
+        if extra_check.returncode == 1 and (extra_check.stdout or extra_check.stderr):
+            check_failed = True
+            check_output += extra_check.stdout + extra_check.stderr
     stat = git_output(repo, "diff", "--stat", base_commit)
     fingerprint = hashlib.sha256(
         (status + "\\0" + diff + "\\0" + "\\n".join(untracked)).encode("utf-8")
@@ -188,8 +199,8 @@ def collect_change_evidence(repo: Path, base_commit: str, task_id: str,
         "changed_files": changed_files,
         "diff_stat": stat,
         "diff_check": {
-            "result": "passed" if diff_check.returncode == 0 else "failed",
-            "output": diff_check.stdout + diff_check.stderr,
+            "result": "failed" if check_failed else "passed",
+            "output": check_output,
         },
         "fingerprint": fingerprint,
         "diff_path": str(diff_path),
