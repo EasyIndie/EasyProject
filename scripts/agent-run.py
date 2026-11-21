@@ -113,6 +113,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             env=os.environ.copy(),
         )
         status = "partial" if completed.returncode == 0 else "failed"
+        stdout_path = None
+        stderr_path = None
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            stdout_file = args.output.with_suffix(args.output.suffix + ".stdout.txt")
+            stderr_file = args.output.with_suffix(args.output.suffix + ".stderr.txt")
+            stdout_file.write_text(completed.stdout, encoding="utf-8")
+            stderr_file.write_text(completed.stderr, encoding="utf-8")
+            stdout_path, stderr_path = str(stdout_file), str(stderr_file)
         handoff = {
             "protocol_version": "1.0",
             "task_id": task["task_id"],
@@ -132,12 +141,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             "next_action": "Inspect output, working-tree diff, and acceptance criteria; update the handoff before marking completed.",
             "pull_request_url": None,
             "commit_sha": None,
-            "raw_stdout": completed.stdout,
-            "raw_stderr": completed.stderr,
-            "exit_code": completed.returncode
+            "artifacts": {
+                "stdout_path": stdout_path,
+                "stderr_path": stderr_path,
+                "exit_code": completed.returncode
+            }
         }
         if args.output:
-            args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(json.dumps(handoff, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         else:
             print(json.dumps(handoff, ensure_ascii=False, indent=2))
