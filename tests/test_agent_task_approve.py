@@ -66,6 +66,10 @@ class AgentTaskApprovalTests(unittest.TestCase):
             self.assertFalse(result["task"]["permissions"]["repository_write"])
             self.assertEqual(result["approval_mode"], "read-only")
             self.assertFalse(result["execution"]["agent_invoked"])
+            self.assertEqual(result["promotion_version"], "1.1")
+            self.assertEqual(
+                result["approval_sha256"], approval.compute_approval_digest(result)
+            )
 
     def test_explicit_write_approval_promotes_schema_valid_task(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -81,6 +85,9 @@ class AgentTaskApprovalTests(unittest.TestCase):
             self.assertFalse(result["task"]["permissions"]["external_side_effects"])
             self.assertEqual(result["approval_mode"], "write-enabled")
             self.assertFalse(result["execution"]["started"])
+            self.assertEqual(
+                result["approval_sha256"], approval.compute_approval_digest(result)
+            )
 
     def test_rejects_stale_source_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
