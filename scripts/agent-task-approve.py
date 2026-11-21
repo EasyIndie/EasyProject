@@ -21,6 +21,21 @@ ACCEPTANCE_CHECKS = {
 }
 
 
+def approval_payload(wrapper: dict[str, Any]) -> dict[str, Any]:
+    """Return the fields covered by the non-authenticating approval integrity digest."""
+    fields = ("promotion_version", "approved_at", "approval_note",
+              "approval_mode", "evidence_verified", "task")
+    return {key: wrapper.get(key) for key in fields}
+
+
+def compute_approval_digest(wrapper: dict[str, Any]) -> str:
+    canonical = json.dumps(
+        approval_payload(wrapper), ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
 def git(root: Path, *args: str) -> str:
     result = subprocess.run(
         ["git", "-C", str(root), *args],
@@ -155,8 +170,8 @@ def promote(root: Path, report: dict[str, Any], candidate_id: str,
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     Draft202012Validator(schema).validate(task)
 
-    return {
-        "promotion_version": "1.0",
+    artifact = {
+        "promotion_version": "1.1",
         "approved_at": datetime.now(timezone.utc).isoformat(),
         "approval_note": approval_note.strip(),
         "approval_mode": "write-enabled" if approve_write else "read-only",
@@ -168,6 +183,8 @@ def promote(root: Path, report: dict[str, Any], candidate_id: str,
             "human_must_start_execution_separately": True,
         },
     }
+    artifact["approval_sha256"] = compute_approval_digest(artifact)
+    return artifact
 
 
 def main() -> int:
