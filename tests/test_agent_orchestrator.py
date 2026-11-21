@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -65,6 +66,40 @@ class OrchestratorTests(unittest.TestCase):
     def test_unknown_acceptance_check_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "Unsupported acceptance check"):
             orchestrator.acceptance_command("arbitrary-shell")
+
+    def test_acceptance_check_command_can_be_cancelled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cancel_file = Path(tmp) / "cancel.request"
+            cancel_file.write_text("requested", encoding="utf-8")
+            code, stdout, stderr, reason = orchestrator.run_command_controlled(
+                [sys.executable, "-c", "import time; time.sleep(5)"],
+                Path(tmp), 5, cancel_file,
+            )
+            self.assertEqual(code, 130)
+            self.assertEqual(reason, "cancelled")
+
+    def test_cancelled_dependency_blocks_downstream_task(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp) / "runs"
+            state = orchestrator.initial_state(plan([item("a"), item("b", ["a"])]), use_worktrees=True)
+            state["tasks"]["a"]["status"] = "cancelled"
+            result = orchestrator.run_plan(plan([item("a"), item("b", ["a"])]), runs, state, True)
+            self.assertEqual(result, 0)
+            self.assertEqual(state["tasks"]["b"]["status"], "blocked")
+            self.assertTrue((runs / "orchestrator-state.json").is_file())
+
+    def test_cancel_request_only_targets_the_active_attempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp) / "runs"
+            state = {"tasks": {"task-a": {"status": "running", "attempts": 2}}}
+            marker = orchestrator.request_cancel("task-a", state, runs)
+            payload = json.loads(marker.read_text(encoding="utf-8"))
+            self.assertEqual(payload["task_id"], "task-a")
+            self.assertEqual(payload["attempt"], 2)
+            self.assertTrue(marker.name.endswith("cancel-attempt-2.request"))
+            state["tasks"]["task-a"]["status"] = "awaiting_review"
+            with self.assertRaisesRegex(ValueError, "only running tasks"):
+                orchestrator.request_cancel("task-a", state, runs)
 
     def test_valid_dag(self):
         with tempfile.TemporaryDirectory() as tmp:

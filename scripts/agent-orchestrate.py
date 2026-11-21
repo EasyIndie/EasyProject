@@ -9,10 +9,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -20,7 +23,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "scripts/agent-run.py"
-TERMINAL = {"completed", "failed", "blocked"}
+TERMINAL = {"completed", "failed", "blocked", "cancelled"}
 ACCEPTANCE_CHECK_TIMEOUT_SECONDS = 900
 
 
@@ -40,8 +43,61 @@ def acceptance_command(check_id: str) -> list[str]:
     return commands[check_id]
 
 
+def stop_command_tree(process: subprocess.Popen[str]) -> tuple[str, str]:
+    try:
+        if os.name == "nt":
+            process.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            os.killpg(process.pid, signal.SIGTERM)
+    except (OSError, ProcessLookupError):
+        try:
+            process.terminate()
+        except OSError:
+            pass
+    try:
+        return process.communicate(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                               text=True, capture_output=True, check=False)
+            else:
+                os.killpg(process.pid, signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            try:
+                process.kill()
+            except OSError:
+                pass
+        return process.communicate()
+
+
+def run_command_controlled(argv: list[str], workspace: Path, timeout_seconds: int,
+                           cancel_file: Path | None = None) -> tuple[int, str, str, str | None]:
+    options: dict[str, object] = {}
+    if os.name == "nt":
+        options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        options["start_new_session"] = True
+    process = subprocess.Popen(
+        argv, cwd=workspace, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, **options,
+    )
+    started = time.monotonic()
+    while True:
+        try:
+            stdout, stderr = process.communicate(timeout=0.2)
+            return process.returncode or 0, stdout, stderr, None
+        except subprocess.TimeoutExpired:
+            if cancel_file and cancel_file.is_file():
+                stdout, stderr = stop_command_tree(process)
+                return 130, stdout, stderr, "cancelled"
+            if time.monotonic() - started >= timeout_seconds:
+                stdout, stderr = stop_command_tree(process)
+                return 124, stdout, stderr, "timeout"
+
+
 def run_acceptance_checks(check_ids: list[str], workspace: Path,
-                          runs_dir: Path, task_id: str, attempt: int) -> dict[str, Any]:
+                          runs_dir: Path, task_id: str, attempt: int, cancel_file: Path | None = None) -> dict[str, Any]:
     """Run only fixed, allowlisted test commands and persist their outputs."""
     if not check_ids:
         return {"status": "not_configured", "results": []}
@@ -55,18 +111,16 @@ def run_acceptance_checks(check_ids: list[str], workspace: Path,
         if shutil.which(argv[0]) is None:
             stdout, stderr, exit_code, result = "", f"Executable not found: {argv[0]}", None, "not_found"
         else:
-            try:
-                completed = subprocess.run(
-                    argv, cwd=workspace, text=True, capture_output=True,
-                    timeout=ACCEPTANCE_CHECK_TIMEOUT_SECONDS, check=False,
-                )
-                stdout, stderr, exit_code = completed.stdout, completed.stderr, completed.returncode
-                result = "passed" if exit_code == 0 else "failed"
-            except subprocess.TimeoutExpired as exc:
-                stdout = exc.stdout.decode("utf-8", errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
-                stderr = exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+            exit_code, stdout, stderr, termination = run_command_controlled(
+                argv, workspace, ACCEPTANCE_CHECK_TIMEOUT_SECONDS, cancel_file,
+            )
+            if termination == "cancelled":
+                result = "cancelled"
+            elif termination == "timeout":
                 stderr += f"\\nTimed out after {ACCEPTANCE_CHECK_TIMEOUT_SECONDS} seconds."
-                exit_code, result = None, "timeout"
+                result = "timeout"
+            else:
+                result = "passed" if exit_code == 0 else "failed"
         stdout_path.write_text(stdout, encoding="utf-8")
         stderr_path.write_text(stderr, encoding="utf-8")
         results.append({
@@ -77,6 +131,8 @@ def run_acceptance_checks(check_ids: list[str], workspace: Path,
             "stdout_path": str(stdout_path),
             "stderr_path": str(stderr_path),
         })
+        if result == "cancelled":
+            return {"status": "cancelled", "results": results}
     status = "passed" if all(item["result"] == "passed" for item in results) else "failed"
     return {"status": status, "results": results}
 
@@ -309,7 +365,7 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                 continue
             dependencies = item.get("depends_on", [])
             dependency_states = [state["tasks"][dep]["status"] for dep in dependencies]
-            if any(status in {"failed", "blocked"} for status in dependency_states):
+            if any(status in {"failed", "blocked", "cancelled"} for status in dependency_states):
                 record.update(status="blocked", updated_at=now())
                 state["updated_at"] = now()
                 save_state(state_path, state)
@@ -324,12 +380,17 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             task_output = runs_dir / task_id / f"attempt-{attempt}.handoff.json"
             task_output.parent.mkdir(parents=True, exist_ok=True)
             workspace = prepare_worktree(ROOT, runs_dir, task_id, record) if use_worktrees else ROOT
+            cancel_file = runs_dir / task_id / f"cancel-attempt-{attempt}.request"
             command = [
                 sys.executable, str(RUNNER), "--task", str(task_path),
                 "--harness", item.get("harness", "codex"),
                 "--output", str(task_output), "--cwd", str(workspace),
+                "--cancel-file", str(cancel_file),
             ]
-            record.update(status="running", attempts=attempt, updated_at=now())
+            record.update(
+                status="running", attempts=attempt, cancel_file=str(cancel_file),
+                started_at=now(), updated_at=now(),
+            )
             state["updated_at"] = now()
             save_state(state_path, state)
             result = subprocess.run(command, cwd=ROOT, check=False)
@@ -340,7 +401,7 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             if result.returncode == 0:
                 automated_checks = run_acceptance_checks(
                     task_envelope.get("acceptance_checks", []), workspace,
-                    runs_dir, task_id, attempt,
+                    runs_dir, task_id, attempt, cancel_file,
                 )
             record["automated_checks"] = automated_checks
             if use_worktrees and record.get("base_commit"):
@@ -349,23 +410,54 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                     automated_checks=automated_checks,
                 )
                 record["review_evidence"] = evidence["evidence_path"]
-            if result.returncode == 0 and automated_checks["status"] != "failed":
+            if result.returncode == 130 or automated_checks["status"] == "cancelled":
+                record.update(status="cancelled", termination_reason="cancelled", finished_at=now())
+            elif result.returncode == 0 and automated_checks["status"] in {"passed", "not_configured"}:
                 # The adapter intentionally emits partial; only explicit human
                 # approval may transition this task to completed.
                 record["status"] = "awaiting_review"
             elif attempt < item.get("max_attempts", 1):
-                record["status"] = "retryable"
+                reason = (
+                    "timeout" if result.returncode == 124
+                    else "acceptance_checks_failed" if result.returncode == 0
+                    else "process_failed"
+                )
+                record.update(status="retryable", termination_reason=reason)
             else:
-                record["status"] = "failed"
+                reason = (
+                    "timeout" if result.returncode == 124
+                    else "acceptance_checks_failed" if result.returncode == 0
+                    else "process_failed"
+                )
+                record.update(status="failed", termination_reason=reason)
             record["updated_at"] = now()
             state["updated_at"] = now()
             save_state(state_path, state)
             progress = True
             # Stop after one actual agent invocation: review/approval is a gate.
             print(f"{task_id}: {record['status']} (exit={result.returncode}, checks={automated_checks['status']}, attempt={attempt})")
-            return 1 if result.returncode or automated_checks["status"] == "failed" else 0
+            return 1 if result.returncode or automated_checks["status"] not in {"passed", "not_configured"} else 0
     save_state(state_path, state)
     return 0
+
+
+def request_cancel(task_id: str, state: dict[str, Any], runs_dir: Path) -> Path:
+    """Write a cooperative cancellation marker for the currently running attempt."""
+    record = state.get("tasks", {}).get(task_id)
+    if record is None:
+        raise ValueError(f"Unknown task_id: {task_id}")
+    if record.get("status") != "running":
+        raise ValueError(f"{task_id} is {record.get('status')}; only running tasks can be cancelled.")
+    attempt = record.get("attempts", 0)
+    if attempt < 1:
+        raise ValueError(f"{task_id} has no active attempt to cancel.")
+    marker = runs_dir / task_id / f"cancel-attempt-{attempt}.request"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        marker.write_text(json.dumps({"task_id": task_id, "attempt": attempt, "requested_at": now()}), encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"Cannot create cancellation marker: {exc}") from exc
+    return marker
 
 
 def approve(task_id: str, state: dict[str, Any], state_path: Path) -> None:
@@ -532,6 +624,7 @@ def main() -> int:
     actions = parser.add_mutually_exclusive_group()
     actions.add_argument("--approve", metavar="TASK_ID", help="Approve a reviewed task handoff.")
     actions.add_argument("--integrate", metavar="TASK_ID", help="Integrate an approved worktree task into the current branch.")
+    actions.add_argument("--cancel", metavar="TASK_ID", help="Request cooperative cancellation of a running task.")
     parser.add_argument("--dry-run", action="store_true", help="Validate and display the DAG without creating journals or worktrees.")
     parser.add_argument("--worktrees", action="store_true", help="Run each task in its own detached Git worktree.")
     args = parser.parse_args()
@@ -568,6 +661,12 @@ def main() -> int:
                 raise ValueError("--integrate requires both --resume and --worktrees.")
             integrate_task(ROOT, args.integrate, state, state_path)
             print(f"{args.integrate}: {state['tasks'][args.integrate]['status']} (integration)")
+            return 0
+        if args.cancel:
+            if not args.resume:
+                raise ValueError("--cancel requires --resume.")
+            marker = request_cancel(args.cancel, state, runs_dir)
+            print(f"{args.cancel}: cancellation requested; runner confirmation is pending ({marker})")
             return 0
         return run_plan(plan, runs_dir, state, args.worktrees)
     except (OSError, ValueError, json.JSONDecodeError) as exc:

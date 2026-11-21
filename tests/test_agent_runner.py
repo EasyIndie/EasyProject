@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -24,6 +25,26 @@ def task(write: bool = False) -> dict:
 
 
 class AgentRunnerTests(unittest.TestCase):
+
+    def test_run_harness_enforces_timeout_and_stops_process(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, stdout, stderr, reason = agent_run.run_harness(
+                [sys.executable, "-c", "import time; time.sleep(5)"],
+                Path(tmp), 0.1,
+            )
+            self.assertEqual(code, 124)
+            self.assertEqual(reason, "timeout")
+
+    def test_run_harness_observes_cancellation_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cancel_file = Path(tmp) / "cancel.request"
+            cancel_file.write_text("requested", encoding="utf-8")
+            code, stdout, stderr, reason = agent_run.run_harness(
+                [sys.executable, "-c", "import time; time.sleep(5)"],
+                Path(tmp), 5, cancel_file,
+            )
+            self.assertEqual(code, 130)
+            self.assertEqual(reason, "cancelled")
 
     def test_workspace_path_is_resolved_and_must_exist(self):
         with tempfile.TemporaryDirectory() as tmp:
