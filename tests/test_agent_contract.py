@@ -34,6 +34,15 @@ class AgentContractTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             Draft202012Validator(schema).validate(task)
 
+    def test_task_acceptance_checks_are_from_the_fixed_allowlist(self) -> None:
+        schema = self.load_json("schemas/task.schema.json")
+        task = self.load_json("examples/task.json")
+        task["acceptance_checks"] = ["python-unittest", "cargo-test"]
+        Draft202012Validator(schema).validate(task)
+        task["acceptance_checks"] = ["bash -c 'rm -rf .'"]
+        with self.assertRaises(ValidationError):
+            Draft202012Validator(schema).validate(task)
+
     def test_task_rejects_unknown_permission(self) -> None:
         schema = self.load_json("schemas/task.schema.json")
         task = self.load_json("examples/task.json")
