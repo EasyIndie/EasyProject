@@ -10,8 +10,10 @@ import argparse
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Sequence
 
@@ -86,6 +88,75 @@ def resolve_workspace(path: Path) -> Path:
     return workspace
 
 
+def stop_process_tree(process: subprocess.Popen[str]) -> tuple[str, str]:
+    """Terminate the harness process group and collect its final output."""
+    try:
+        if os.name == "nt":
+            process.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            os.killpg(process.pid, signal.SIGTERM)
+    except (OSError, ProcessLookupError):
+        try:
+            process.terminate()
+        except OSError:
+            pass
+    try:
+        return process.communicate(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    text=True, capture_output=True, check=False,
+                )
+            else:
+                os.killpg(process.pid, signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            try:
+                process.kill()
+            except OSError:
+                pass
+        return process.communicate()
+
+
+def run_harness(command: list[str], workspace: Path, timeout_seconds: int,
+                cancel_file: Path | None = None) -> tuple[int, str, str, str | None]:
+    """Run a harness in its own process group with timeout and file-based cancellation."""
+    options: dict[str, object] = {}
+    if os.name == "nt":
+        options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        options["start_new_session"] = True
+    process = subprocess.Popen(
+        command, cwd=workspace, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, env=os.environ.copy(), **options,
+    )
+    started = time.monotonic()
+    poll_interval = min(0.2, max(0.02, timeout_seconds))
+    while True:
+        try:
+            stdout, stderr = process.communicate(timeout=poll_interval)
+            return process.returncode or 0, stdout, stderr, None
+        except subprocess.TimeoutExpired:
+            if cancel_file and cancel_file.is_file():
+                stdout, stderr = stop_process_tree(process)
+                return 130, stdout, stderr, "cancelled"
+            if time.monotonic() - started >= timeout_seconds:
+                stdout, stderr = stop_process_tree(process)
+                return 124, stdout, stderr, "timeout"
+
+
+def persist_raw_output(output_path: Path | None, stdout: str, stderr: str) -> tuple[str | None, str | None]:
+    if output_path is None:
+        return None, None
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    stdout_file = output_path.with_suffix(output_path.suffix + ".stdout.txt")
+    stderr_file = output_path.with_suffix(output_path.suffix + ".stderr.txt")
+    stdout_file.write_text(stdout, encoding="utf-8")
+    stderr_file.write_text(stderr, encoding="utf-8")
+    return str(stdout_file), str(stderr_file)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", required=True, type=Path, help="Path to a task envelope JSON file")
@@ -93,6 +164,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--timeout", type=int, help="Override task timeout in minutes")
     parser.add_argument("--output", type=Path, help="Write raw stdout/stderr and a handoff draft to this JSON file")
     parser.add_argument("--cwd", type=Path, default=ROOT, help="Repository workspace in which the agent process runs")
+    parser.add_argument("--cancel-file", type=Path, help="File created by the orchestrator to request cancellation")
     args = parser.parse_args(argv)
 
     try:
@@ -112,26 +184,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("agent-run: timeout must be at least one minute", file=sys.stderr)
         return 2
 
+    cancel_file = args.cancel_file.resolve() if args.cancel_file else None
     try:
-        completed = subprocess.run(
-            command,
-            cwd=workspace,
-            text=True,
-            capture_output=True,
-            timeout=timeout * 60,
-            check=False,
-            env=os.environ.copy(),
+        exit_code, stdout, stderr, termination = run_harness(
+            command, workspace, timeout * 60, cancel_file,
         )
-        status = "partial" if completed.returncode == 0 else "failed"
-        stdout_path = None
-        stderr_path = None
-        if args.output:
-            args.output.parent.mkdir(parents=True, exist_ok=True)
-            stdout_file = args.output.with_suffix(args.output.suffix + ".stdout.txt")
-            stderr_file = args.output.with_suffix(args.output.suffix + ".stderr.txt")
-            stdout_file.write_text(completed.stdout, encoding="utf-8")
-            stderr_file.write_text(completed.stderr, encoding="utf-8")
-            stdout_path, stderr_path = str(stdout_file), str(stderr_file)
+        stdout_path, stderr_path = persist_raw_output(args.output, stdout, stderr)
+        if termination == "cancelled":
+            print("agent-run: cancellation request observed; process group stopped.", file=sys.stderr)
+            return 130
+        if termination == "timeout":
+            print(f"agent-run: timed out after {timeout} minutes; process group stopped.", file=sys.stderr)
+            return 124
+        status = "partial" if exit_code == 0 else "failed"
         handoff = {
             "protocol_version": "1.0",
             "task_id": task["task_id"],
@@ -154,7 +219,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "artifacts": {
                 "stdout_path": stdout_path,
                 "stderr_path": stderr_path,
-                "exit_code": completed.returncode
+                "exit_code": exit_code
             }
         }
         from jsonschema import Draft202012Validator
@@ -164,10 +229,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.output.write_text(json.dumps(handoff, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         else:
             print(json.dumps(handoff, ensure_ascii=False, indent=2))
-        return completed.returncode
-    except subprocess.TimeoutExpired as exc:
-        print(f"agent-run: timed out after {timeout} minutes; partial output: {exc.stdout or ''}", file=sys.stderr)
-        return 124
+        return exit_code
 
 
 if __name__ == "__main__":
