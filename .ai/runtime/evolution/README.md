@@ -7,16 +7,38 @@ EasyProject self-evolution uses two nested isolation boundaries:
 
 The stable checkout is never the Agent's write workspace. The candidate branch is not merged or pushed automatically. **All mutable run data is stored outside both Git worktrees**, so task envelopes, plans, journals, logs, and evidence cannot pollute the template or candidate source tree.
 
-## Evidence-based task discovery
+## Discover and approve a candidate
 
-Before starting a self-evolution run, collect narrow, reviewable maintenance signals:
+Run the read-only discovery scan:
 
 ```bash
-python3 scripts/agent-discover.py
-python3 scripts/agent-discover.py --max-candidates 25 --output ../easyproject-discovery.json
+python3 scripts/agent-discover.py --output ../easyproject-discovery.json
 ```
 
-The discovery tool scans Git-tracked text files for explicit TODO/FIXME/HACK markers and emits Task Envelope candidates with source path, line, and file hash. It does not run Agents, modify files, create Issues, or access the network. Every candidate has repository-write, network, secret, and external-side-effect permissions disabled. A marker is only a signal—not a confirmed defect—and every candidate requires human review before any task is promoted for execution. See [the discovery contract](../discovery/README.md).
+Review the evidence and write a precise objective and acceptance criteria. Promote only a candidate that has a clear, bounded purpose:
+
+```bash
+python3 scripts/agent-task-approve.py \
+  --report ../easyproject-discovery.json \
+  --candidate-id DISC-0123456789ab \
+  --objective "Implement the reviewed maintenance improvement" \
+  --acceptance-criterion "The reported issue is resolved" \
+  --acceptance-criterion "Relevant regression tests pass" \
+  --approval-note "Reviewed the source evidence and approved this task" \
+  --harness codex \
+  --check python-unittest \
+  --approve-write \
+  --output ../approved-task.json
+```
+
+The approval tool revalidates the repository base SHA, tracked source path, file hash,
+and marker location. It validates the promoted Task Envelope against the schema.
+Without `--approve-write`, the task stays read-only; with it, only repository-write
+permission is enabled. Network, secret access, and external side effects remain denied.
+The tool does not launch an Agent. Inspect the generated task before separately
+starting an Evolution run.
+
+See [the discovery and approval contract](../discovery/README.md) for full semantics.
 
 ## Start a real evolution run
 
