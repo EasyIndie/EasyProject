@@ -77,6 +77,10 @@ GitHub Issues and Projects are the default source of truth for task status when 
 
 The template CI must execute real checks. The baseline quality gate runs bootstrap end-to-end tests, shell linting, Markdown linting, local Markdown link validation, GitHub Actions workflow linting and security analysis, and Git history secret scanning on every pull request and push to the default branch. Security and link tools are pinned to verified release versions and archive checksums. The CI fetches full Git history so secret scanning can inspect prior commits. Add language-specific lint, test, and build jobs only when the project has the corresponding toolchain and commands configured. A placeholder or commented-out command is not a passing check. Run the same baseline locally with the tools listed in `scripts/validate-repo.sh`.
 
+## Repository protection
+
+GitHub rulesets and branch protection settings are not copied from this template. Apply the recommended default-branch protections in [GitHub repository protection](docs/github-repository-protection.md).
+
 ## Customization
 
 This template is intentionally domain- and language-neutral. Add project-specific rules under `.ai/context/`, `.ai/rules/`, and relevant workflow folders. Keep agent role contracts generic; adapt them to a specific coding harness only in that harness's configuration directory.
