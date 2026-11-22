@@ -362,7 +362,21 @@ def resolve_task_path(task_file: str, runs_dir: Path) -> Path:
     return task_path
 
 
-def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_worktrees: bool) -> int:
+def build_runner_command(task_path: Path, harness: str, output: Path, workspace: Path,
+                         cancel_file: Path, allow_unsandboxed_pi_write: bool) -> list[str]:
+    """Build the runner argv; Pi's unsafe write opt-in comes only from the control plane."""
+    command = [
+        sys.executable, str(RUNNER), "--task", str(task_path),
+        "--harness", harness, "--output", str(output), "--cwd", str(workspace),
+        "--cancel-file", str(cancel_file),
+    ]
+    if harness == "pi" and allow_unsandboxed_pi_write:
+        command.append("--allow-unsandboxed-pi-write")
+    return command
+
+
+def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_worktrees: bool,
+             allow_unsandboxed_pi_write: bool = False) -> int:
     by_id = {item["task_id"]: item for item in plan["tasks"]}
     state_path = runs_dir / "orchestrator-state.json"
     progress = True
