@@ -74,7 +74,7 @@
     "runtime": {
       "type": "object", "additionalProperties": false,
       "properties": {
-        "backend": {"enum": ["native", "rootless-docker", "gvisor", "kata", "firecracker"]},
+        "backend": {"enum": ["native", "macos-seatbelt", "linux-rootless-oci", "rootless-docker", "windows-appcontainer", "wsl2-worker", "gvisor", "kata", "firecracker"]},
         "image": {"type": "string"},
         "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
       }
