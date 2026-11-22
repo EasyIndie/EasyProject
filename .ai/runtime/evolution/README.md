@@ -78,7 +78,7 @@ Requirements:
 - A configured and authenticated `codex`, `claude`, or `pi` CLI on `PATH`.
 - The selected Agent CLI must be permitted to write to its isolated workspace by its own local permission configuration.
 
-Pi has no OS-level sandbox. Pi Evolution write tasks are rejected by default. Supply `--allow-unsandboxed-pi-write` explicitly to `evolution.py start` only after accepting host-access risk. Evolution records this human opt-in in its external runtime manifest and forwards it as an Orchestrator CLI control-plane flag; an editable Task Envelope cannot grant the permission. The override does not create a sandbox and a Worktree does not restrict host access. Prefer Codex (`workspace-write` sandbox) until the whole-process task sandbox is implemented.
+Pi has no OS-level sandbox. Pi Evolution write tasks are rejected by default. Supply `--allow-unsandboxed-pi-write` explicitly to `evolution.py start` only after accepting host-access risk. Evolution records the initial opt-in in its external runtime manifest for audit and forwards each explicit invocation as an Orchestrator CLI control-plane flag; an editable Task Envelope or manifest cannot grant the permission. Every Pi resume requires the human to repeat `--allow-unsandboxed-pi-write`. The override does not create a sandbox and a Worktree does not restrict host access. Prefer Codex (`workspace-write` sandbox) until the whole-process task sandbox is implemented.
 
 First run the non-mutating prerequisite check. It verifies the Git checkout, clean working tree, Python dependency, and CLI executable/version. It does not inspect or print credentials and does not prove that the CLI is authenticated:
 
