@@ -154,9 +154,10 @@ class OrchestratorTests(unittest.TestCase):
             workspace = root / "workspace"
             workspace.mkdir()
             import sandbox_runtime
-            with patch("sandbox_runtime.SandboxManager", return_value=sandbox_runtime.SandboxManager(backends=[])):
+            empty_manager = sandbox_runtime.SandboxManager(backends=[])
+            with patch("sandbox_runtime.SandboxManager", return_value=empty_manager):
                 with self.assertRaisesRegex(RuntimeError, "No registered backend"):
-                        orchestrator.run_acceptance_checks(
+                    orchestrator.run_acceptance_checks(
                         ["python-unittest"], workspace, root / "runs",
                         "task-a", 1, require_sandbox=True,
                         sandbox_profile=ROOT / ".ai/runtime/examples/sandbox-profile.json",
