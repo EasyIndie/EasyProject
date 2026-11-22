@@ -113,7 +113,7 @@ Record backend/version, host OS, effective profile hash, task ID, start/end, exi
 
 ## Launcher implementation status
 
-The current launcher contract is implemented in `scripts/sandbox_runtime.py`. The Agent Runner accepts `--require-sandbox --sandbox-profile <file>` and refuses to start when no complete backend is registered. Its handoff records `sandbox_status`, backend ID and profile digest. Legacy runs without `--require-sandbox` are explicitly marked `not-enforced`; they are not considered isolated.
+The current launcher contract is implemented in `scripts/sandbox_runtime.py`. The Orchestrator accepts the trusted control-plane switch `--require-sandbox` (default profile: the stable checkout's `.ai/runtime/examples/sandbox-profile.json`) and passes it to every Agent Runner. The Agent Runner accepts `--require-sandbox --sandbox-profile <file>` and refuses to start when no complete backend is registered. Its handoff records `sandbox_status`, backend ID and profile digest. Legacy runs without `--require-sandbox` are explicitly marked `not-enforced`; they are not considered isolated.
 
 The backend interface also requires a sanitized process environment and must cap the outer Runner timeout to the profile's timeout. A host environment copy is not an acceptable sandbox launch environment.
 
