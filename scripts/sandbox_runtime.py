@@ -152,7 +152,7 @@ class SandboxManager:
         task_id: str,
         workspace: Path,
         runtime_directory: Path,
-    ) -> tuple[list[str], dict]:
+    ) -> tuple[list[str], dict[str, str], dict]:
         profile, digest = load_profile(profile_path)
         requested_platform = profile.get("platform", "auto")
         current = host_platform()
