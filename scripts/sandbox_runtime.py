@@ -107,7 +107,18 @@ def host_platform() -> str:
 class SandboxManager:
     """Selects only backends that explicitly prove complete policy support."""
 
-    def __init__(self, backends: Sequence[SandboxBackend] = ()) -> None:
+    def __init__(self, backends: Sequence[SandboxBackend] | None = None) -> None:
+        if backends is None:
+            backends = ()
+            if host_platform() == "linux":
+                try:
+                    scripts_dir = str(ROOT / "scripts")
+                    if scripts_dir not in sys.path:
+                        sys.path.insert(0, scripts_dir)
+                    from sandbox_backends.podman_rootless import RootlessPodmanBackend
+                    backends = (RootlessPodmanBackend(),)
+                except ImportError:
+                    backends = ()
         self._backends = {backend.backend_id: backend for backend in backends}
 
     def capabilities(self) -> list[SandboxCapabilities]:

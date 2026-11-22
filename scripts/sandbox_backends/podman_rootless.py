@@ -127,10 +127,12 @@ class RootlessPodmanBackend:
         if "," in str(workspace):
             raise SandboxEnforcementError("Workspace path cannot contain commas in Podman mount syntax.")
         git = workspace / ".git"
-        if git.is_file():
-            raise SandboxEnforcementError("Git worktree pointer detected; shared Git metadata is forbidden.")
+        if git.is_symlink() or git.is_file():
+            raise SandboxEnforcementError("Git worktree pointer or symlink detected; shared Git metadata is forbidden.")
         if git.exists() and not git.is_dir():
             raise SandboxEnforcementError("Unsupported .git metadata type.")
+        if git.is_dir() and ((git / "commondir").exists() or (git / "objects/info/alternates").exists()):
+            raise SandboxEnforcementError("Shared Git common directory or object alternates are forbidden.")
         fs = spec.profile["filesystem"]
         if not fs["workspace_read"]:
             raise SandboxEnforcementError("Workspace read access is required.")
