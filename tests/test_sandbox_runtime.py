@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import tempfile
+from dataclasses import replace
 import unittest
 from pathlib import Path
 
@@ -66,12 +67,29 @@ class FakeBackend:
         return {"PATH": "/sandbox/bin", "HOME": "/sandbox/home"}
 
 
+class LeakyBackend(FakeBackend):
+    def probe(self):
+        return replace(super().probe(), terminates_process_tree_on_exit=False)
+
+
 class SandboxRuntimeTests(unittest.TestCase):
     def test_doctor_fails_closed_when_no_backend_is_registered(self):
         doctor = sandbox.SandboxManager().doctor()
         self.assertFalse(doctor["enforcement_ready"])
         self.assertEqual(doctor["fallback"], "forbidden")
         self.assertEqual(doctor["backends"][0]["status"], "not-implemented")
+
+    def test_backend_without_descendant_cleanup_is_not_eligible(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            profile_path = Path(tmp) / "profile.json"
+            profile_path.write_text(json.dumps(profile()), encoding="utf-8")
+            manager = sandbox.SandboxManager([LeakyBackend()])
+            with self.assertRaises(sandbox.SandboxBackendUnavailable):
+                manager.build_command(
+                    ["agent"], profile_path, "task-1", Path(tmp), Path(tmp) / "runtime",
+                    {"repository_read": True, "repository_write": True,
+                     "network_access": False, "secret_access": False}
+                )
 
     def test_valid_profile_has_stable_digest(self):
         with tempfile.TemporaryDirectory() as tmp:
