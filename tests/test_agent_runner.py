@@ -109,6 +109,14 @@ class AgentRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "allow-unsandboxed-pi-write"):
             agent_run.build_command("pi", task(write=True), "prompt")
 
+    def test_pi_write_command_can_be_built_for_mandatory_os_sandbox(self) -> None:
+        command = agent_run.build_command(
+            "pi", task(write=True), "prompt", sandbox_requested=True
+        )
+        tools = command[command.index("--tools") + 1]
+        self.assertIn("edit", tools.split(","))
+        self.assertIn("bash", tools.split(","))
+
     def test_pi_explicit_unsafe_write_exposes_edit_and_shell_tools(self) -> None:
         request = task(write=True)
         command = agent_run.build_command(
