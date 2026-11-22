@@ -339,6 +339,7 @@ class OrchestratorTests(unittest.TestCase):
             self.assertFalse((git_dir / "objects/info/alternates").exists())
             self.assertEqual(orchestrator.git_output(workspace, "rev-parse", "--git-common-dir"), ".git")
             self.assertEqual(orchestrator.git_output(workspace, "remote"), "")
+            self.assertEqual(orchestrator.git_output(workspace, "config", "core.hooksPath"), os.devnull)
             self.assertEqual(record["workspace_mode"], "independent-clone")
             self.assertEqual(orchestrator.prepare_worktree(root, runs, "sandbox-task", record, independent_clone=True), workspace)
             (workspace / "README.md").write_text("agent change\\n", encoding="utf-8")
