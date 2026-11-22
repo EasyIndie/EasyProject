@@ -22,6 +22,7 @@ from typing import Any
 
 
 CODE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(CODE_ROOT / "scripts"))
 ROOT = CODE_ROOT
 RUNNER = CODE_ROOT / "scripts/agent-run.py"
 TERMINAL = {"completed", "failed", "blocked", "cancelled"}
