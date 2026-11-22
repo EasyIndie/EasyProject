@@ -164,8 +164,10 @@ class RootlessPodmanBackend:
             "--stop-timeout=5", "--ulimit=core=0",
             "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=256m",
             "--tmpfs", "/home/sandbox:rw,noexec,nosuid,nodev,size=64m",
+            # The task clone has private Git metadata (no shared refs/objects/remotes).
+            # Keep it writable so the Agent can create the commit consumed by Integrator.
+            # The entire clone remains inside this task sandbox and cannot reach stable refs.
             "--mount", f"type=bind,src={workspace},dst=/workspace,{mode}",
-            "--mount", f"type=bind,src={git},dst=/workspace/.git,ro",
             "--workdir=/workspace",
             "--env=PATH=/usr/local/bin:/usr/bin:/bin",
             "--env=HOME=/home/sandbox", "--env=TMPDIR=/tmp",
