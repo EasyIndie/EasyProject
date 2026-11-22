@@ -11,6 +11,7 @@ import copy
 import hashlib
 import json
 import platform
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Protocol, Sequence

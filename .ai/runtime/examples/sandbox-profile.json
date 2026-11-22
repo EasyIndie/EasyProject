@@ -2,7 +2,7 @@
   "protocol_version": "1.0",
   "profile_id": "task-developer",
   "isolation_level": "workspace-write",
-  "platform": "auto",
+  "platform": "linux",
   "filesystem": {
     "workspace_read": true,
     "workspace_write": true,
@@ -49,5 +49,9 @@
     ],
     "direct_workspace_sharing": false,
     "symlink_policy": "reject-escape"
+  },
+  "runtime": {
+    "backend": "linux-rootless-oci",
+    "image": "ghcr.io/easyindie/easyproject-agent@sha256:0000000000000000000000000000000000000000000000000000000000000000"
   }
 }

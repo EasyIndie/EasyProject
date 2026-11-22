@@ -51,7 +51,7 @@ class RootlessPodmanBackend:
             enabled = set((cgroup / "cgroup.subtree_control").read_text().replace("+", "").split())
         except OSError as exc:
             return set(), f"user cgroup delegation is unreadable: {exc}"
-        effective = available | enabled
+        effective = enabled
         if not REQUIRED.issubset(effective):
             return effective, "cpu/memory/pids are not delegated to the user service"
         return effective, "required systemd user cgroup controllers verified"
@@ -124,6 +124,8 @@ class RootlessPodmanBackend:
         workspace = spec.workspace
         if not workspace.is_dir() or workspace.is_symlink():
             raise SandboxEnforcementError("Workspace must be an existing real directory.")
+        if "," in str(workspace):
+            raise SandboxEnforcementError("Workspace path cannot contain commas in Podman mount syntax.")
         git = workspace / ".git"
         if git.is_file():
             raise SandboxEnforcementError("Git worktree pointer detected; shared Git metadata is forbidden.")

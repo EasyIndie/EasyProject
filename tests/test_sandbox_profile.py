@@ -59,6 +59,10 @@ def baseline_profile() -> dict:
             "direct_workspace_sharing": False,
             "symlink_policy": "reject-escape",
         },
+        "runtime": {
+            "backend": "linux-rootless-oci",
+            "image": "registry.example/agent@sha256:" + "a" * 64,
+        },
     }
 
 

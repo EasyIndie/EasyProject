@@ -22,6 +22,10 @@ required_files=(
   "scripts/agent-run.py"
   "scripts/sandbox_runtime.py"
   "tests/test_sandbox_runtime.py"
+  "scripts/sandbox_backends/__init__.py"
+  "scripts/sandbox_backends/podman_rootless.py"
+  "tests/test_sandbox_podman.py"
+  ".ai/runtime/sandbox/PODMAN-ROOTLESS.md"
   "scripts/artifact_broker.py"
   "tests/test_artifact_broker.py"
   ".ai/runtime/schemas/artifact-manifest.schema.json"
@@ -66,6 +70,7 @@ for name in (
     "scripts/bootstrap.py", "tests/test_bootstrap.py",
     "scripts/agent-run.py", "tests/test_agent_runner.py",
     "scripts/sandbox_runtime.py", "tests/test_sandbox_runtime.py",
+    "scripts/sandbox_backends/podman_rootless.py", "tests/test_sandbox_podman.py",
     "scripts/artifact_broker.py", "tests/test_artifact_broker.py",
     "scripts/agent-orchestrate.py", "tests/test_agent_orchestrator.py",
     "scripts/evolution.py", "tests/test_evolution.py",

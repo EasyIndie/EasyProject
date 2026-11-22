@@ -5,90 +5,304 @@
   "description": "Declarative least-privilege policy for an externally enforced Agent task sandbox. This schema does not itself enforce isolation.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["protocol_version", "profile_id", "isolation_level", "filesystem", "process", "network", "secrets", "artifacts"],
+  "required": [
+    "protocol_version",
+    "profile_id",
+    "isolation_level",
+    "filesystem",
+    "process",
+    "network",
+    "secrets",
+    "artifacts",
+    "runtime"
+  ],
   "properties": {
-    "protocol_version": {"const": "1.0"},
-    "profile_id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,47}$"},
-    "isolation_level": {"enum": ["read-only", "workspace-write", "restricted-network", "microvm"]},
-    "platform": {"enum": ["auto", "macos", "linux", "windows"]},
+    "protocol_version": {
+      "const": "1.0"
+    },
+    "profile_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,47}$"
+    },
+    "isolation_level": {
+      "enum": [
+        "read-only",
+        "workspace-write",
+        "restricted-network",
+        "microvm"
+      ]
+    },
+    "platform": {
+      "enum": [
+        "auto",
+        "macos",
+        "linux",
+        "windows"
+      ]
+    },
     "filesystem": {
-      "type": "object", "additionalProperties": false,
-      "required": ["workspace_read", "workspace_write", "stable_checkout", "other_agent_workspaces", "shared_git_metadata", "user_home", "credentials", "runtime_directory", "temporary_directory"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspace_read",
+        "workspace_write",
+        "stable_checkout",
+        "other_agent_workspaces",
+        "shared_git_metadata",
+        "user_home",
+        "credentials",
+        "runtime_directory",
+        "temporary_directory"
+      ],
       "properties": {
-        "workspace_read": {"type": "boolean"},
-        "workspace_write": {"type": "boolean"},
-        "stable_checkout": {"const": "deny"},
-        "other_agent_workspaces": {"const": "deny"},
-        "shared_git_metadata": {"const": "deny"},
-        "user_home": {"const": "deny"},
-        "credentials": {"const": "deny"},
-        "runtime_directory": {"const": "deny"},
-        "temporary_directory": {"enum": ["private", "none"]},
-        "read_only_paths": {"type": "array", "items": {"type": "string"}, "default": []},
-        "write_paths": {"type": "array", "items": {"type": "string"}, "default": []}
+        "workspace_read": {
+          "type": "boolean"
+        },
+        "workspace_write": {
+          "type": "boolean"
+        },
+        "stable_checkout": {
+          "const": "deny"
+        },
+        "other_agent_workspaces": {
+          "const": "deny"
+        },
+        "shared_git_metadata": {
+          "const": "deny"
+        },
+        "user_home": {
+          "const": "deny"
+        },
+        "credentials": {
+          "const": "deny"
+        },
+        "runtime_directory": {
+          "const": "deny"
+        },
+        "temporary_directory": {
+          "enum": [
+            "private",
+            "none"
+          ]
+        },
+        "read_only_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "write_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
       }
     },
     "process": {
-      "type": "object", "additionalProperties": false,
-      "required": ["isolated_process_tree", "inherit_sandbox", "resource_limits", "timeout_enforced", "privilege_escalation"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "isolated_process_tree",
+        "inherit_sandbox",
+        "resource_limits",
+        "timeout_enforced",
+        "privilege_escalation"
+      ],
       "properties": {
-        "isolated_process_tree": {"const": true},
-        "inherit_sandbox": {"const": true},
-        "resource_limits": {"const": true},
-        "timeout_enforced": {"const": true},
-        "privilege_escalation": {"const": "deny"},
-        "max_cpu": {"type": "number", "exclusiveMinimum": 0},
-        "max_memory_mb": {"type": "integer", "minimum": 128},
-        "max_processes": {"type": "integer", "minimum": 1},
-        "timeout_seconds": {"type": "integer", "minimum": 1}
+        "isolated_process_tree": {
+          "const": true
+        },
+        "inherit_sandbox": {
+          "const": true
+        },
+        "resource_limits": {
+          "const": true
+        },
+        "timeout_enforced": {
+          "const": true
+        },
+        "privilege_escalation": {
+          "const": "deny"
+        },
+        "max_cpu": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max_memory_mb": {
+          "type": "integer",
+          "minimum": 128
+        },
+        "max_processes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "network": {
-      "type": "object", "additionalProperties": false,
-      "required": ["default", "allowed_domains", "allow_lan", "allow_host"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "default",
+        "allowed_domains",
+        "allow_lan",
+        "allow_host"
+      ],
       "properties": {
-        "default": {"const": "deny"},
-        "allowed_domains": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
-        "allow_lan": {"const": false},
-        "allow_host": {"const": false},
-        "egress_proxy_required": {"type": "boolean", "default": true}
+        "default": {
+          "const": "deny"
+        },
+        "allowed_domains": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "allow_lan": {
+          "const": false
+        },
+        "allow_host": {
+          "const": false
+        },
+        "egress_proxy_required": {
+          "type": "boolean",
+          "default": true
+        }
       }
     },
     "secrets": {
-      "type": "object", "additionalProperties": false,
-      "required": ["inherit_host_environment", "credential_mounts", "brokered_credentials"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inherit_host_environment",
+        "credential_mounts",
+        "brokered_credentials"
+      ],
       "properties": {
-        "inherit_host_environment": {"const": false},
-        "credential_mounts": {"const": false},
-        "brokered_credentials": {"type": "array", "items": {"type": "string"}, "default": []}
+        "inherit_host_environment": {
+          "const": false
+        },
+        "credential_mounts": {
+          "const": false
+        },
+        "brokered_credentials": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
       }
     },
     "artifacts": {
-      "type": "object", "additionalProperties": false,
-      "required": ["export", "direct_workspace_sharing", "symlink_policy"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "export",
+        "direct_workspace_sharing",
+        "symlink_policy"
+      ],
       "properties": {
-        "export": {"type": "array", "uniqueItems": true, "items": {"enum": ["diff", "patch", "handoff", "test-report", "review-evidence"]}},
-        "direct_workspace_sharing": {"const": false},
-        "symlink_policy": {"const": "reject-escape"}
+        "export": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "diff",
+              "patch",
+              "handoff",
+              "test-report",
+              "review-evidence"
+            ]
+          }
+        },
+        "direct_workspace_sharing": {
+          "const": false
+        },
+        "symlink_policy": {
+          "const": "reject-escape"
+        }
       }
     },
     "runtime": {
-      "type": "object", "additionalProperties": false,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "image"
+      ],
       "properties": {
-        "backend": {"enum": ["native", "macos-seatbelt", "linux-rootless-oci", "rootless-docker", "windows-appcontainer", "wsl2-worker", "gvisor", "kata", "firecracker"]},
-        "image": {"type": "string"},
-        "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+        "backend": {
+          "enum": [
+            "native",
+            "macos-seatbelt",
+            "linux-rootless-oci",
+            "rootless-docker",
+            "windows-appcontainer",
+            "wsl2-worker",
+            "gvisor",
+            "kata",
+            "firecracker"
+          ]
+        },
+        "image": {
+          "type": "string",
+          "pattern": "^.+@sha256:[0-9a-f]{64}$"
+        },
+        "image_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
       }
     }
   },
   "allOf": [
     {
-      "if": {"properties": {"isolation_level": {"const": "read-only"}}},
-      "then": {"properties": {"filesystem": {"properties": {"workspace_write": {"const": false}}}}}
+      "if": {
+        "properties": {
+          "isolation_level": {
+            "const": "read-only"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "filesystem": {
+            "properties": {
+              "workspace_write": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
     },
     {
-      "if": {"properties": {"isolation_level": {"const": "microvm"}}},
-      "then": {"properties": {"runtime": {"required": ["backend"], "properties": {"backend": {"const": "firecracker"}}}}}
+      "if": {
+        "properties": {
+          "isolation_level": {
+            "const": "microvm"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "runtime": {
+            "properties": {
+              "backend": {
+                "const": "firecracker"
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }
