@@ -134,6 +134,73 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(state["sandbox_required"])
         self.assertEqual(state["sandbox_profile_sha256"], "a" * 64)
 
+    def test_sandboxed_acceptance_checks_fail_closed_without_backend(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            with self.assertRaisesRegex(RuntimeError, "No registered backend"):
+                orchestrator.run_acceptance_checks(
+                    ["python-unittest"], workspace, root / "runs",
+                    "task-a", 1, require_sandbox=True,
+                    sandbox_profile=ROOT / ".ai/runtime/examples/sandbox-profile.json",
+                    task_permissions={
+                        "repository_read": True, "repository_write": True,
+                        "network_access": False, "secret_access": False,
+                    },
+                )
+
+    def test_review_artifact_is_portable_and_bound_to_review_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runs = root / "runs"
+            task_dir = runs / "task-a"
+            task_dir.mkdir(parents=True)
+            diff_path = task_dir / "review.diff"
+            diff_path.write_text("diff --git a/a.txt b/a.txt\\n", encoding="utf-8")
+            evidence = {
+                "protocol_version": "1.0",
+                "task_id": "task-a",
+                "base_commit": "abcdef0123456789",
+                "captured_at": "2026-11-22T00:00:00+00:00",
+                "changed_files": ["a.txt"],
+                "diff_stat": "1 file changed",
+                "diff_check": {"result": "passed", "output": ""},
+                "fingerprint": "a" * 64,
+                "diff_path": str(diff_path),
+                "acceptance": {"automated_checks": {"status": "passed", "results": [{
+                    "stdout_path": str(task_dir / "checks" / "stdout.txt"),
+                    "stderr_path": str(task_dir / "checks" / "stderr.txt"),
+                }]}},
+            }
+            evidence_path = task_dir / "review-evidence.json"
+            evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+            artifact = orchestrator.publish_review_artifact(evidence, runs, "task-a", 1)
+            record = {
+                "task_id": "task-a",
+                "review_evidence": str(evidence_path),
+                "review_artifact": artifact,
+            }
+            manifest = orchestrator.verify_review_artifact(record)
+            self.assertEqual(manifest["kind"], "review-evidence")
+            portable = json.loads(
+                (Path(artifact["artifact_dir"]) / "review-evidence.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(portable["diff_path"], "review.diff")
+            self.assertEqual(portable["acceptance"]["automated_checks"]["results"][0]["stdout_path"], "stdout.txt")
+
+    def test_sandbox_required_approval_rejects_missing_immutable_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            handoff = root / "handoff.json"
+            handoff.write_text(json.dumps({"task_id": "task-a", "status": "partial"}), encoding="utf-8")
+            state = orchestrator.initial_state(plan([item("task-a")]), sandbox_required=True)
+            record = state["tasks"]["task-a"]
+            record.update(status="awaiting_review", handoff=str(handoff),
+                          automated_checks={"status": "passed", "results": []})
+            with self.assertRaisesRegex(ValueError, "immutable review artifact"):
+                orchestrator.approve("task-a", state, root / "state.json")
+
     def test_valid_dag(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "plan.json"
