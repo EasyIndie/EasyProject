@@ -56,7 +56,7 @@ Candidate branch -> separately approved PR
 See [sandbox-profile.schema.json](../schemas/sandbox-profile.schema.json). The profile is declarative and versioned. Policy resolution is performed by the trusted control plane. An Agent may request capabilities but cannot expand its own profile. Missing backend, unsupported policy, setup failure, or enforcement uncertainty must fail closed.
 
 The profile must constrain:
-- filesystem: task workspace only; stable checkout, other task workspaces, home, credentials and control-plane runtime denied;
+- filesystem: task workspace only; stable checkout, other task workspaces, shared Git metadata/object/ref stores, home, credentials and control-plane runtime denied;
 - process: process-tree inheritance, timeout, CPU/memory/process limits, no privilege escalation;
 - network: deny by default, no LAN/host routes, explicit brokered egress only;
 - secrets: no host environment inheritance or credential mounts; scoped short-lived broker grants only;
