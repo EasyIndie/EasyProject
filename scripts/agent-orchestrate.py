@@ -21,8 +21,9 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[1]
-RUNNER = ROOT / "scripts/agent-run.py"
+CODE_ROOT = Path(__file__).resolve().parents[1]
+ROOT = CODE_ROOT
+RUNNER = CODE_ROOT / "scripts/agent-run.py"
 TERMINAL = {"completed", "failed", "blocked", "cancelled"}
 ACCEPTANCE_CHECK_TIMEOUT_SECONDS = 900
 
