@@ -254,7 +254,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "artifacts": {
             "stdout_path": stdout_path,
             "stderr_path": stderr_path,
-            "exit_code": exit_code
+            "exit_code": exit_code,
+            "sandbox_status": sandbox_evidence["status"],
+            "sandbox_backend": sandbox_evidence.get("backend"),
+            "sandbox_profile_sha256": sandbox_evidence.get("profile_sha256"),
         }
     }
     from jsonschema import Draft202012Validator
