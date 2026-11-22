@@ -303,11 +303,6 @@ def verify_artifact(artifact_dir: Path) -> dict:
             relative = path.relative_to(artifact_dir).as_posix()
             if relative != "artifact.json":
                 actual.add(relative)
-    expected_directories = {
-        PurePosixPath(item).parent.as_posix()
-        for item in expected
-        if len(PurePosixPath(item).parts) > 1
-    }
     all_expected_directories: set[str] = set()
     for item in expected:
         parent = PurePosixPath(item).parent
@@ -324,9 +319,10 @@ def materialize_artifact(artifact_dir: Path, destination: Path) -> dict:
     if destination.exists() or destination.is_symlink():
         raise ArtifactError("Materialization destination must not already exist.")
     artifact_root = artifact_dir.resolve()
+    store_root = artifact_root.parent
     destination_parent = destination.parent.resolve()
-    if destination_parent == artifact_root or destination_parent.is_relative_to(artifact_root):
-        raise ArtifactError("Reviewer snapshot cannot be created inside the immutable artifact store entry.")
+    if destination_parent == store_root or destination_parent.is_relative_to(store_root):
+        raise ArtifactError("Reviewer snapshot cannot be created inside the immutable artifact store.")
     if not destination.parent.is_dir() or destination.parent.is_symlink():
         raise ArtifactError("Materialization parent must be an existing, non-symlink directory.")
     destination.mkdir(mode=0o700)
