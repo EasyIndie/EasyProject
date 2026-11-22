@@ -2,12 +2,12 @@
 
 For a fresh local clone, Agent session startup, canonical-template detection, harness routing, isolated iteration, and the human review/PR handoff, start with the [local template maintenance and self-evolution playbook](AGENT-PLAYBOOK.md). The playbook is the Agent-facing entry point; this document remains the detailed runtime command reference.
 
-EasyProject self-evolution uses two nested isolation boundaries:
+EasyProject self-evolution uses two nested workspaces with a trusted control plane:
 
-1. The **stable checkout** creates and controls a candidate Git worktree.
-2. The candidate's own **Evolution runtime** runs the task orchestrator, which creates a second worktree for the coding Agent.
+1. The **stable checkout** owns the trusted Evolution entry point, Orchestrator, and Agent Runner code.
+2. The control plane operates on a candidate Git worktree and creates a second task worktree for the coding Agent.
 
-The stable checkout is never the Agent's write workspace. The candidate branch is not merged or pushed automatically. **All mutable run data is stored outside both Git worktrees**, so task envelopes, plans, journals, logs, and evidence cannot pollute the template or candidate source tree.
+The candidate is mutable and must never supply the Orchestrator or Runner executable code used to control itself. The stable checkout is never the Agent's write workspace. The candidate branch is not merged or pushed automatically. **All mutable run data is stored outside both Git worktrees**, so task envelopes, plans, journals, logs, and evidence cannot pollute the template or candidate source tree.
 
 ## Discover, approve, and execute a candidate
 
