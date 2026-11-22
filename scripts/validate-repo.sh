@@ -27,6 +27,7 @@ required_files=(
   ".ai/runtime/schemas/artifact-manifest.schema.json"
   ".ai/runtime/artifacts/README.md"
   ".ai/runtime/sandbox/LAUNCHER-CONTRACT.md"
+  ".ai/runtime/sandbox/ADR-001-backend-selection.md"
   ".ai/runtime/examples/sandbox-profile.json"
   ".ai/runtime/schemas/sandbox-profile.schema.json"
   ".ai/runtime/schemas/task.schema.json"
