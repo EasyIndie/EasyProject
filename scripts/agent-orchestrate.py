@@ -268,7 +268,7 @@ def prepare_worktree(repo: Path, runs_dir: Path, task_id: str,
     if record.get("worktree"):
         path = Path(record["worktree"]).resolve()
         if not path.is_dir():
-            raise ValueError(task_id + ": recorded task workspace is missing; inspect journal before recovery.")
+            raise ValueError(task_id + ": recorded worktree is missing; inspect journal before recovery.")
         if record.get("workspace_mode", "linked-worktree") != mode:
             raise ValueError(task_id + ": recorded workspace mode differs from this run; recreate the task workspace deliberately.")
         top = Path(git_output(path, "rev-parse", "--show-toplevel")).resolve()
