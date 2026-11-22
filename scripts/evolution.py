@@ -414,7 +414,12 @@ def start(args: argparse.Namespace) -> int:
     print(f"Evolution branch: {branch}")
     print(f"Stable base: {base}")
     print("Starting the candidate's own orchestrator with isolated task worktrees.")
-    return invoke_candidate(candidate, run_dir)
+    return invoke_candidate(
+        candidate, run_dir,
+        allow_unsandboxed_pi_write=(
+            args.harness == "pi" and args.allow_unsandboxed_pi_write
+        ),
+    )
 
 
 def continue_run(args: argparse.Namespace) -> int:
