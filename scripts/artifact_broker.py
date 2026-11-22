@@ -27,7 +27,7 @@ MAX_FILES = 128
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_TOTAL_BYTES = 50 * 1024 * 1024
 BLOCKED_NAMES = {
-    ".ssh", ".aws", ".azure", ".kube", ".docker", ".netrc", ".npmrc",
+    ".git", ".hg", ".svn", ".ssh", ".aws", ".azure", ".kube", ".docker", ".netrc", ".npmrc",
     ".pypirc", ".git-credentials", ".gitconfig", ".config", ".envrc",
     "credentials", "credential", "secrets", "secret",
     "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa", "authorized_keys",
@@ -71,7 +71,7 @@ def normalize_relative_path(value: str) -> PurePosixPath:
             raise ArtifactError(f"Cross-platform unsafe path component: {part!r}")
         if lowered in BLOCKED_NAMES or lowered.startswith(".env"):
             raise ArtifactError(f"Sensitive path is not exportable: {value!r}")
-        if Path(part).suffix.lower() in BLOCKED_SUFFIXES:
+        if Path(part).suffix.lower() in BLOCKED_SUFFIXES | {".env"}:
             raise ArtifactError(f"Private-key or keystore file is not exportable: {value!r}")
     return path
 
@@ -261,8 +261,13 @@ def _read_manifest(artifact_dir: Path) -> dict:
     if artifact_dir.is_symlink() or not artifact_dir.is_dir():
         raise ArtifactError("Artifact directory must be a non-symlink directory.")
     manifest_path = artifact_dir / "artifact.json"
-    if manifest_path.is_symlink() or not manifest_path.is_file():
-        raise ArtifactError("Artifact manifest is missing or unsafe.")
+    try:
+        manifest_info = os.lstat(manifest_path)
+    except OSError as exc:
+        raise ArtifactError(f"Artifact manifest is missing: {exc}") from exc
+    if (stat.S_ISLNK(manifest_info.st_mode) or not stat.S_ISREG(manifest_info.st_mode)
+            or manifest_info.st_nlink != 1 or manifest_info.st_size > 1024 * 1024):
+        raise ArtifactError("Artifact manifest is a symlink, hard link, special file or oversized.")
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         from jsonschema import Draft202012Validator, FormatChecker
