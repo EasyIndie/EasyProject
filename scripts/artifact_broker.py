@@ -15,6 +15,7 @@ import shutil
 import stat
 import sys
 import tempfile
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Sequence
@@ -59,12 +60,15 @@ def normalize_relative_path(value: str) -> PurePosixPath:
     if any(part in ("", ".", "..") for part in raw_parts):
         raise ArtifactError(f"Empty, dot, and parent path components are forbidden: {value!r}")
     path = PurePosixPath(value)
-    if path.as_posix() == "artifact.json":
+    if path.parts and path.parts[0].casefold() == "artifact.json":
         raise ArtifactError("artifact.json is reserved for the broker manifest.")
     if path.is_absolute():
         raise ArtifactError(f"Absolute artifact path is forbidden: {value!r}")
+    windows_reserved = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)), *(f"lpt{i}" for i in range(1, 10))}
     for part in path.parts:
         lowered = part.lower()
+        if (":" in part or part.endswith((".", " ")) or lowered in windows_reserved):
+            raise ArtifactError(f"Cross-platform unsafe path component: {part!r}")
         if lowered in BLOCKED_NAMES or lowered.startswith(".env"):
             raise ArtifactError(f"Sensitive path is not exportable: {value!r}")
         if Path(part).suffix.lower() in BLOCKED_SUFFIXES:
@@ -182,8 +186,15 @@ def export_artifact(
     store = store.resolve()
     _ensure_disjoint_paths(workspace, store)
     normalized = [normalize_relative_path(item) for item in paths]
-    if len(set(normalized)) != len(normalized):
-        raise ArtifactError("Duplicate artifact paths are not allowed.")
+    def collision_key(item: PurePosixPath) -> str:
+        return unicodedata.normalize("NFD", item.as_posix().casefold())
+    collision_keys = [collision_key(item) for item in normalized]
+    if len(set(collision_keys)) != len(collision_keys):
+        raise ArtifactError("Case-insensitive or Unicode-normalized duplicate paths are not allowed.")
+    for left in collision_keys:
+        for right in collision_keys:
+            if left != right and right.startswith(left.rstrip("/") + "/"):
+                raise ArtifactError("Artifact paths cannot be both files and parent directories.")
 
     payloads: list[tuple[PurePosixPath, bytes]] = []
     total_bytes = 0
