@@ -209,6 +209,12 @@ class SandboxManager:
             "gvisor": "gvisor", "kata": "kata", "firecracker": "firecracker",
         }
         selected_id = backend_aliases.get(requested_backend, requested_backend)
+        if requested_backend == "native":
+            selected_id = {
+                "macos": "macos-seatbelt",
+                "linux": "linux-rootless-oci",
+                "windows": "windows-appcontainer",
+            }.get(current)
         candidates = []
         for backend in self._backends.values():
             if selected_id and backend.backend_id != selected_id:
