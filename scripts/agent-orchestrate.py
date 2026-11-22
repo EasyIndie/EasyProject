@@ -662,6 +662,10 @@ def main() -> int:
     actions.add_argument("--cancel", metavar="TASK_ID", help="Request cooperative cancellation of a running task.")
     parser.add_argument("--dry-run", action="store_true", help="Validate and display the DAG without creating journals or worktrees.")
     parser.add_argument("--worktrees", action="store_true", help="Run each task in its own detached Git worktree.")
+    parser.add_argument(
+        "--allow-unsandboxed-pi-write", action="store_true",
+        help="Unsafe: explicitly authorize Pi write tasks without an OS sandbox.",
+    )
     args = parser.parse_args()
     try:
         plan = load_plan(args.plan)
