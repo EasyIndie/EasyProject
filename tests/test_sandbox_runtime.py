@@ -56,7 +56,7 @@ class FakeBackend:
     def probe(self):
         return sandbox.SandboxCapabilities(
             self.backend_id, sandbox.host_platform(), True, True, True, True,
-            True, False, "ready", "test double only"
+            True, True, False, "ready", "test double only"
         )
 
     def build_command(self, command, spec):
