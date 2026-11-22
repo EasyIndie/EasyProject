@@ -22,8 +22,7 @@ class PodmanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             ws=Path(tmp)/"ws"; ws.mkdir()
             cmd=podman.RootlessPodmanBackend("/usr/bin/podman").build_command(["python","-m","pytest"],spec_for(ws)); joined=" ".join(cmd)
-            for flag in ("--userns=keep-id","--network=none","--pid=private","--read-only","--cap-drop=ALL","--security-opt=no-new-privileges","--pids-limit=128","--memory=2048m","--cpus=2","--pull=never","dst=/workspace,rw","GIT_OPTIONAL_LOCKS=0"): self.assertIn(flag,joined)
-            self.assertNotIn("dst=/workspace/.git,ro", joined)
+            for flag in ("--userns=keep-id","--network=none","--pid=private","--read-only","--cap-drop=ALL","--security-opt=no-new-privileges","--pids-limit=128","--memory=2048m","--cpus=2","--pull=never","dst=/workspace,rw","dst=/workspace/.git,ro","GIT_OPTIONAL_LOCKS=0"): self.assertIn(flag,joined)
             self.assertEqual(cmd[-3:],["python","-m","pytest"])
     def test_read_only_workspace(self):
         with tempfile.TemporaryDirectory() as tmp:
