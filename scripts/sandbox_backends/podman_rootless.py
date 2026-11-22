@@ -140,9 +140,9 @@ class RootlessPodmanBackend:
         git = workspace / ".git"
         if git.is_symlink() or git.is_file():
             raise SandboxEnforcementError("Git worktree pointer or symlink detected; shared Git metadata is forbidden.")
-        if git.exists() and not git.is_dir():
-            raise SandboxEnforcementError("Unsupported .git metadata type.")
-        if git.is_dir() and ((git / "commondir").exists() or (git / "objects/info/alternates").exists()):
+        if not git.is_dir():
+            raise SandboxEnforcementError("Sandbox workspace requires a private .git directory.")
+        if (git / "commondir").exists() or (git / "objects/info/alternates").exists():
             raise SandboxEnforcementError("Shared Git common directory or object alternates are forbidden.")
         fs = spec.profile["filesystem"]
         if not fs["workspace_read"]:
@@ -165,9 +165,12 @@ class RootlessPodmanBackend:
             "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=256m",
             "--tmpfs", "/home/sandbox:rw,noexec,nosuid,nodev,size=64m",
             "--mount", f"type=bind,src={workspace},dst=/workspace,{mode}",
+            "--mount", f"type=bind,src={git},dst=/workspace/.git,ro",
             "--workdir=/workspace",
             "--env=PATH=/usr/local/bin:/usr/bin:/bin",
             "--env=HOME=/home/sandbox", "--env=TMPDIR=/tmp",
             "--env=LANG=C.UTF-8", "--env=LC_ALL=C.UTF-8", "--env=CI=1",
+            "--env=GIT_OPTIONAL_LOCKS=0", "--env=GIT_CONFIG_NOSYSTEM=1",
+            "--env=GIT_CONFIG_GLOBAL=/dev/null", "--env=GIT_TERMINAL_PROMPT=0",
             image, *command,
         ]
