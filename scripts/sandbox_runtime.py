@@ -44,6 +44,7 @@ class SandboxCapabilities:
     enforces_filesystem: bool
     enforces_network: bool
     isolates_process_tree: bool
+    terminates_process_tree_on_exit: bool
     enforces_resource_limits: bool
     supports_egress_proxy: bool
     supports_secrets_broker: bool
@@ -123,6 +124,7 @@ class SandboxManager:
                 enforces_filesystem=False,
                 enforces_network=False,
                 isolates_process_tree=False,
+                terminates_process_tree_on_exit=False,
                 enforces_resource_limits=False,
                 supports_egress_proxy=False,
                 supports_secrets_broker=False,
@@ -137,7 +139,7 @@ class SandboxManager:
         ready = any(
             item.platform == current and item.available and item.enforces_filesystem
             and item.enforces_network and item.isolates_process_tree
-            and item.enforces_resource_limits
+            and item.terminates_process_tree_on_exit and item.enforces_resource_limits
             for item in capabilities
         )
         return {
@@ -224,7 +226,8 @@ class SandboxManager:
             needs_secrets_broker = bool(profile["secrets"].get("brokered_credentials"))
             if (caps.platform == current and caps.available
                     and caps.enforces_filesystem and caps.enforces_network
-                    and caps.isolates_process_tree and caps.enforces_resource_limits
+                    and caps.isolates_process_tree and caps.terminates_process_tree_on_exit
+                    and caps.enforces_resource_limits
                     and (not needs_egress_proxy or caps.supports_egress_proxy)
                     and (not needs_secrets_broker or caps.supports_secrets_broker)):
                 candidates.append(backend)
