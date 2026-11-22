@@ -17,6 +17,7 @@ A backend is eligible only if it can enforce all of the following for the reques
 - no privilege escalation and no host container-runtime socket;
 - effective-policy evidence (backend/version, profile digest and platform);
 - sanitized launcher environment: never inherit the host environment wholesale;
+- egress proxy and scoped-secret broker capabilities when the profile requests them;
 - profile wall-clock timeout must cap the Runner timeout.
 
 The manager rejects partial backends. A backend must not claim support based on a binary being installed; `probe()` must verify prerequisites needed to enforce the actual policy. Failure during setup aborts before the Agent starts.
