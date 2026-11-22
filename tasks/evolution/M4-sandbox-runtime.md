@@ -25,7 +25,7 @@ Introduce OS-enforced, task-scoped isolation so multiple cooperating Agents cann
 | M4.4.1 | Rootless Podman capability probe | Verify rootless mode, subordinate UID/GID mappings, cgroup v2, systemd delegation and cpu/memory/pids controllers |
 | M4.4.2 | Rootless OCI launcher | Pinned image, network none, namespaces, read-only rootfs, workspace-only mount, limits, sanitized Agent environment |
 | M4.4.3 | Independent Git metadata | Sandbox-required tasks use independent clones; reject shared Git common-dir and object alternates; Integrator imports reviewed commits explicitly |
-| M4.4.4 | Linux conformance suite | Prove filesystem, network, process-tree and effective resource enforcement on a dedicated Linux worker |
+| M4.4.4 | Linux conformance suite | Manual-only dedicated-worker suite and root-owned evidence marker implemented; real worker run and marker installation still required |
 | M4.5 | Strong isolation backends | gVisor/Kata/Firecracker plugin interface and documented deployment profiles |
 | M4.6 | Brokers and audit | Scoped credential/network broker, policy hash, denial evidence, operational guide |
 
@@ -35,7 +35,7 @@ The platform selection and prerequisites are recorded in [ADR-001: Production Sa
 
 ## Execution order
 
-M4.0–M4.3 are complete. M4.4.1/4.4.2 provide a conservative Rootless Podman probe and launcher. M4.4.3 switches sandbox-required tasks to independent Git clones and explicitly transfers approved commits into the trusted repository during integration. M4.4 remains incomplete until M4.4.4 proves filesystem, network, process-tree and effective cgroup enforcement on a dedicated Linux worker. The backend deliberately does not support network egress or credential brokering; those remain M4.6 work.
+M4.0–M4.3 are complete. M4.4.1/4.4.2 provide a conservative Rootless Podman probe and launcher. M4.4.3 switches sandbox-required tasks to independent Git clones and explicitly transfers approved commits into the trusted repository during integration. M4.4.4 now includes a manual-only dedicated-worker conformance workflow and a root-owned evidence marker. The backend remains unavailable until the suite passes on the target worker and the evidence marker is installed. A passing unit-test CI run is not a substitute for that kernel-level result. The backend deliberately does not support network egress or credential brokering; those remain M4.6 work.
 
 ## Explicit non-goals
 

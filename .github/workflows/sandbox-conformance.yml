@@ -1,0 +1,31 @@
+name: Linux sandbox conformance
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Digest-pinned OCI image already loaded in rootless Podman on the dedicated runner
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  rootless-podman-conformance:
+    runs-on: [self-hosted, linux, x64, rootless-podman]
+    timeout-minutes: 20
+    steps:
+      - name: Check out trusted main branch
+        uses: actions/checkout@v4
+      - name: Run Linux kernel conformance suite
+        env:
+          SANDBOX_IMAGE: ${{ inputs.image }}
+        run: python3 scripts/sandbox_conformance.py --image "$SANDBOX_IMAGE" --evidence /tmp/easyproject-sandbox-conformance.json
+      - name: Upload root-owned marker candidate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: easyproject-sandbox-conformance-evidence
+          path: /tmp/easyproject-sandbox-conformance.json
+          if-no-files-found: ignore

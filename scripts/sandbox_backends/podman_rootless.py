@@ -3,6 +3,8 @@
 from __future__ import annotations
 import os
 import re
+import hashlib
+import stat
 import shutil
 import subprocess
 import json
@@ -12,6 +14,8 @@ from sandbox_runtime import SandboxCapabilities, SandboxEnforcementError, Sandbo
 
 PINNED_IMAGE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
 REQUIRED = {"cpu", "memory", "pids"}
+CONFORMANCE_MARKER = Path("/etc/easyproject/podman-rootless-conformance.json")
+REQUIRED_CONFORMANCE_CHECKS = {"workspace-boundary", "git-metadata-read-only", "network-none", "pid-namespace", "cgroup-limits", "secret-and-runtime-isolation", "process-tree-cleanup"}
 
 class RootlessPodmanBackend:
     backend_id = "linux-rootless-oci"
@@ -68,7 +72,7 @@ class RootlessPodmanBackend:
             return effective, "cpu/memory/pids are not delegated to the user service"
         return effective, "required systemd user cgroup controllers verified"
 
-    def probe(self) -> SandboxCapabilities:
+    def probe_environment(self) -> SandboxCapabilities:
         failures: list[str] = []
         if not Path("/proc/self/uid_map").is_file():
             failures.append("Linux UID namespace mapping is unavailable")
@@ -115,6 +119,41 @@ class RootlessPodmanBackend:
                    "rootless Podman, subordinate ID maps and delegated cgroup v2 verified",
         )
 
+    def _read_conformance_evidence(self) -> tuple[dict | None, str]:
+        marker = CONFORMANCE_MARKER
+        if marker.is_symlink() or not marker.is_file():
+            return None, "root-owned Linux sandbox conformance evidence is not installed"
+        try:
+            metadata = marker.stat()
+            if metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) & 0o022:
+                return None, "conformance evidence must be root-owned and not group/world writable"
+            evidence = json.loads(marker.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return None, f"cannot read conformance evidence: {exc}"
+        suite = Path(__file__).resolve().parents[1] / "sandbox_conformance.py"
+        try:
+            suite_digest = hashlib.sha256(suite.read_bytes()).hexdigest()
+        except OSError as exc:
+            return None, f"conformance suite source is unavailable: {exc}"
+        if evidence.get("protocol_version") != "1.0" or evidence.get("backend_id") != self.backend_id or evidence.get("status") != "passed":
+            return None, "conformance evidence has an invalid protocol, backend or status"
+        if evidence.get("suite_sha256") != suite_digest:
+            return None, "conformance evidence is stale; rerun the current suite"
+        if not PINNED_IMAGE.fullmatch(str(evidence.get("image", ""))):
+            return None, "conformance evidence does not identify a digest-pinned image"
+        if not REQUIRED_CONFORMANCE_CHECKS.issubset(set(evidence.get("checks", []))):
+            return None, "conformance evidence is missing required checks"
+        return evidence, "root-owned conformance evidence verified"
+
+    def probe(self) -> SandboxCapabilities:
+        environment = self.probe_environment()
+        if not environment.available:
+            return environment
+        evidence, reason = self._read_conformance_evidence()
+        if evidence is None:
+            from dataclasses import replace
+            return replace(environment, available=False, status="conformance-required", reason=reason)
+        return replace(environment, status="ready", reason=reason)
     def build_environment(self, spec: SandboxLaunchSpec) -> dict[str, str]:
         runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "")
         if not runtime_dir or not Path(runtime_dir).is_dir():
@@ -125,13 +164,19 @@ class RootlessPodmanBackend:
             "LANG": "C", "LC_ALL": "C",
         }
 
-    def build_command(self, command: Sequence[str], spec: SandboxLaunchSpec) -> list[str]:
+    def build_command(self, command: Sequence[str], spec: SandboxLaunchSpec, *, allow_unverified: bool = False) -> list[str]:
         if not command or any(not isinstance(arg, str) for arg in command):
             raise SandboxEnforcementError("Agent command must be a non-empty argv.")
         runtime = spec.profile.get("runtime", {})
         image = runtime.get("image", "")
         if runtime.get("backend") != self.backend_id or not PINNED_IMAGE.fullmatch(image):
             raise SandboxEnforcementError("runtime.image must be pinned by sha256 digest.")
+        if not allow_unverified:
+            evidence, reason = self._read_conformance_evidence()
+            if evidence is None:
+                raise SandboxEnforcementError(reason)
+            if evidence.get("image") != image:
+                raise SandboxEnforcementError("runtime.image differs from the image covered by conformance evidence.")
         workspace = spec.workspace
         if not workspace.is_dir() or workspace.is_symlink():
             raise SandboxEnforcementError("Workspace must be an existing real directory.")

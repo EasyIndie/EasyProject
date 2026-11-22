@@ -24,6 +24,9 @@ required_files=(
   "tests/test_sandbox_runtime.py"
   "scripts/sandbox_backends/__init__.py"
   "scripts/sandbox_backends/podman_rootless.py"
+  "scripts/sandbox_conformance.py"
+  ".ai/runtime/sandbox/CONFORMANCE.md"
+  ".github/workflows/sandbox-conformance.yml"
   "tests/test_sandbox_podman.py"
   ".ai/runtime/sandbox/PODMAN-ROOTLESS.md"
   "scripts/artifact_broker.py"
@@ -71,6 +74,7 @@ for name in (
     "scripts/agent-run.py", "tests/test_agent_runner.py",
     "scripts/sandbox_runtime.py", "tests/test_sandbox_runtime.py",
     "scripts/sandbox_backends/podman_rootless.py", "tests/test_sandbox_podman.py",
+    "scripts/sandbox_conformance.py",
     "scripts/artifact_broker.py", "tests/test_artifact_broker.py",
     "scripts/agent-orchestrate.py", "tests/test_agent_orchestrator.py",
     "scripts/evolution.py", "tests/test_evolution.py",
