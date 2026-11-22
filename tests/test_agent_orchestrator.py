@@ -6,6 +6,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -30,6 +31,19 @@ def item(task_id, deps=None):
 
 
 class OrchestratorTests(unittest.TestCase):
+    def make_writable(self, root: Path) -> None:
+        for current, directories, files in os.walk(root, topdown=False):
+            current_path = Path(current)
+            for name in files:
+                path = current_path / name
+                if not path.is_symlink():
+                    os.chmod(path, 0o600)
+            for name in directories:
+                path = current_path / name
+                if not path.is_symlink():
+                    os.chmod(path, 0o700)
+            os.chmod(current_path, 0o700)
+
     def test_allowlisted_acceptance_check_runs_and_persists_logs(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp) / "workspace"
@@ -153,6 +167,7 @@ class OrchestratorTests(unittest.TestCase):
     def test_review_artifact_is_portable_and_bound_to_review_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            self.addCleanup(self.make_writable, root)
             runs = root / "runs"
             task_dir = runs / "task-a"
             task_dir.mkdir(parents=True)
