@@ -39,13 +39,14 @@ Backends are injected into the manager by trusted application code. A backend mu
 ```bash
 python3 scripts/sandbox_runtime.py doctor
 python3 scripts/sandbox_runtime.py validate-profile --profile .ai/runtime/examples/sandbox-profile.json
+python3 scripts/agent-orchestrate.py --plan .ai/runtime/examples/plan.json --worktrees --require-sandbox
 ```
 
 Exit code 3 from `doctor` means no production backend can enforce the complete policy. This is a fail-closed status, not a runtime failure to be ignored.
 
 ## Agent Runner
 
-`agent-run.py --require-sandbox --sandbox-profile <file>` requests mandatory enforcement. If no complete backend is registered, it exits before spawning Pi, Codex or Claude Code. Without `--require-sandbox`, legacy local execution remains explicitly unsandboxed and is not to be described as secure or isolated. New unattended or untrusted execution flows must pass `--require-sandbox`.
+`agent-orchestrate.py --require-sandbox` is the trusted control-plane switch; it pins the profile path and digest in the external run journal and passes the requirement to every Runner invocation. A resume must preserve the requirement and exact profile digest. Direct `agent-run.py --require-sandbox --sandbox-profile <file>` requests mandatory enforcement. If no complete backend is registered, it exits before spawning Pi, Codex or Claude Code. Without `--require-sandbox`, legacy local execution remains explicitly unsandboxed and is not to be described as secure or isolated. New unattended or untrusted execution flows must pass `--require-sandbox`.
 
 ## Backend implementation sequence
 
