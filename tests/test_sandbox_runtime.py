@@ -53,7 +53,7 @@ def profile() -> dict:
 
 
 class FakeBackend:
-    backend_id = "test-backend"
+    backend_id = "linux-rootless-oci"
 
     def probe(self):
         return sandbox.SandboxCapabilities(
@@ -160,7 +160,7 @@ class SandboxRuntimeTests(unittest.TestCase):
             self.assertEqual(command, ["sandbox-test-wrapper", "claude", "-p"])
             self.assertEqual(environment, {"PATH": "/sandbox/bin", "HOME": "/sandbox/home"})
             self.assertEqual(evidence["status"], "enforced")
-            self.assertEqual(evidence["backend"], "test-backend")
+            self.assertEqual(evidence["backend"], "linux-rootless-oci")
             self.assertEqual(len(evidence["profile_sha256"]), 64)
 
 
