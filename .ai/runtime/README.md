@@ -45,4 +45,4 @@ Do not use `completed` when checks were skipped or when the result relies on unv
 
 ## Artifact exchange
 
-See [Immutable Artifact Broker](artifacts/README.md) for content-addressed export, verification and read-only reviewer snapshots. Agents must not exchange files through shared writable directories.
+See [Immutable Artifact Broker](artifacts/README.md) for the standalone content-addressed export, verification and read-only reviewer snapshot CLI. Orchestrator and Integrator automation is not wired yet; Agents must not exchange files through shared writable directories.
