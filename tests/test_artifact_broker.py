@@ -19,6 +19,19 @@ SPEC.loader.exec_module(broker)
 
 
 class ArtifactBrokerTests(unittest.TestCase):
+    def make_writable(self, root: Path) -> None:
+        for current, directories, files in os.walk(root, topdown=False):
+            current_path = Path(current)
+            for name in files:
+                path = current_path / name
+                if not path.is_symlink():
+                    os.chmod(path, 0o600)
+            for name in directories:
+                path = current_path / name
+                if not path.is_symlink():
+                    os.chmod(path, 0o700)
+            os.chmod(current_path, 0o700)
+
     def make_workspace(self, root: Path) -> Path:
         workspace = root / "workspace"
         workspace.mkdir()
@@ -30,6 +43,7 @@ class ArtifactBrokerTests(unittest.TestCase):
     def test_export_verify_and_materialize_read_only_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            self.addCleanup(self.make_writable, root)
             workspace = self.make_workspace(root)
             store = root / "artifact-store"
             result = broker.export_artifact(
