@@ -391,6 +391,8 @@ def build_runner_command(task_path: Path, harness: str, output: Path, workspace:
 def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_worktrees: bool,
              allow_unsandboxed_pi_write: bool = False, require_sandbox: bool = False,
              sandbox_profile: Path | None = None) -> int:
+    if require_sandbox and not use_worktrees:
+        raise ValueError("Sandbox-required orchestration requires task-specific worktrees.")
     by_id = {item["task_id"]: item for item in plan["tasks"]}
     state_path = runs_dir / "orchestrator-state.json"
     progress = True
