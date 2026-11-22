@@ -2,7 +2,7 @@
 
 ## Purpose and trust boundary
 
-The Artifact Broker is a trusted control-plane utility. It is the only supported file exchange path between Agent tasks, reviewers and the integrator. Agents do not share writable directories.
+The Artifact Broker is the target trusted control-plane utility for file exchange between Agent tasks, reviewers and the integrator. This milestone delivers its standalone CLI and immutable storage contract; Orchestrator automation and Integrator wiring are a follow-up M4.3b task. Agents must not share writable directories.
 
 The broker must run after the producing Agent and its descendants have stopped. Exporting a workspace while an Agent is still writing creates a time-of-check/time-of-use race and does not produce a reliable snapshot. The broker validates source paths and file metadata, but a frozen source workspace is an operational precondition.
 
@@ -55,7 +55,7 @@ python3 scripts/artifact_broker.py verify \
   --artifact-dir .agent-runs/artifacts/sha256-<digest>
 ```
 
-Create a read-only reviewer snapshot:
+Create a read-only reviewer snapshot (including the provenance manifest):
 
 ```bash
 python3 scripts/artifact_broker.py materialize \
