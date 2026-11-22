@@ -203,6 +203,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             sandbox_requested=args.require_sandbox,
         )
         workspace = resolve_workspace(args.cwd)
+        if args.require_sandbox and args.allow_unsandboxed_pi_write:
+            raise ValueError("--require-sandbox and --allow-unsandboxed-pi-write are mutually exclusive.")
         if args.require_sandbox and not args.sandbox_profile:
             raise ValueError("--require-sandbox requires --sandbox-profile.")
         if args.sandbox_profile and not args.require_sandbox:
