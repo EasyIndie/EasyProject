@@ -592,7 +592,8 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                     automated_checks = {"status": "failed", "results": [], "error": str(exc)}
             record["automated_checks"] = automated_checks
             artifact_error = None
-            if use_worktrees and record.get("base_commit"):
+            if (use_worktrees and record.get("base_commit")
+                    and sandbox_error is None and (not require_sandbox or sandbox_enforced)):
                 evidence = collect_change_evidence(
                     workspace, record["base_commit"], task_id, runs_dir,
                     automated_checks=automated_checks,
