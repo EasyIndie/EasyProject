@@ -655,6 +655,8 @@ def integrate_task(repo: Path, task_id: str, state: dict[str, Any],
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", required=True, type=Path)
+    parser.add_argument("--repo-root", type=Path,
+                        help="Repository workspace to operate on; orchestration code remains trusted.")
     parser.add_argument("--runs-dir", type=Path, default=Path(".agent-runs/orchestrator"))
     parser.add_argument("--resume", action="store_true", help="Resume from the existing run journal.")
     actions = parser.add_mutually_exclusive_group()
