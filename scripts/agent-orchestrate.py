@@ -22,6 +22,7 @@ from typing import Any
 
 
 CODE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(CODE_ROOT / "scripts"))
 ROOT = CODE_ROOT
 RUNNER = CODE_ROOT / "scripts/agent-run.py"
 TERMINAL = {"completed", "failed", "blocked", "cancelled"}
@@ -203,10 +204,15 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
     temp.replace(path)
 
 
-def initial_state(plan: dict[str, Any], use_worktrees: bool = False) -> dict[str, Any]:
+def initial_state(plan: dict[str, Any], use_worktrees: bool = False,
+                  sandbox_required: bool = False, sandbox_profile: str | None = None,
+                  sandbox_profile_sha256: str | None = None) -> dict[str, Any]:
     return {
         "protocol_version": "1.0",
         "worktrees_enabled": use_worktrees,
+        "sandbox_required": sandbox_required,
+        "sandbox_profile": sandbox_profile,
+        "sandbox_profile_sha256": sandbox_profile_sha256,
         "updated_at": now(),
         "tasks": {
             item["task_id"]: {
@@ -364,7 +370,9 @@ def resolve_task_path(task_file: str, runs_dir: Path) -> Path:
 
 
 def build_runner_command(task_path: Path, harness: str, output: Path, workspace: Path,
-                         cancel_file: Path, allow_unsandboxed_pi_write: bool) -> list[str]:
+                         cancel_file: Path, allow_unsandboxed_pi_write: bool,
+                         require_sandbox: bool = False,
+                         sandbox_profile: Path | None = None) -> list[str]:
     """Build the runner argv; Pi's unsafe write opt-in comes only from the control plane."""
     command = [
         sys.executable, str(RUNNER), "--task", str(task_path),
@@ -373,11 +381,18 @@ def build_runner_command(task_path: Path, harness: str, output: Path, workspace:
     ]
     if harness == "pi" and allow_unsandboxed_pi_write:
         command.append("--allow-unsandboxed-pi-write")
+    if require_sandbox:
+        if sandbox_profile is None:
+            raise ValueError("Sandbox-required orchestration needs a trusted profile path.")
+        command.extend(["--require-sandbox", "--sandbox-profile", str(sandbox_profile)])
     return command
 
 
 def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_worktrees: bool,
-             allow_unsandboxed_pi_write: bool = False) -> int:
+             allow_unsandboxed_pi_write: bool = False, require_sandbox: bool = False,
+             sandbox_profile: Path | None = None) -> int:
+    if require_sandbox and not use_worktrees:
+        raise ValueError("Sandbox-required orchestration requires task-specific worktrees.")
     by_id = {item["task_id"]: item for item in plan["tasks"]}
     state_path = runs_dir / "orchestrator-state.json"
     progress = True
@@ -413,6 +428,7 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                 harness == "pi"
                 and task_envelope.get("permissions", {}).get("repository_write") is True
                 and not allow_unsandboxed_pi_write
+                and not require_sandbox
             ):
                 raise ValueError(
                     f"{task_id}: Pi write requires the orchestrator's explicit "
@@ -420,7 +436,7 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                 )
             command = build_runner_command(
                 task_path, harness, task_output, workspace, cancel_file,
-                allow_unsandboxed_pi_write,
+                allow_unsandboxed_pi_write, require_sandbox, sandbox_profile,
             )
             record.update(
                 status="running", attempts=attempt, cancel_file=str(cancel_file),
@@ -669,12 +685,35 @@ def main() -> int:
         "--allow-unsandboxed-pi-write", action="store_true",
         help="Unsafe: explicitly authorize Pi write tasks without an OS sandbox.",
     )
+    parser.add_argument(
+        "--require-sandbox", action="store_true",
+        help="Require OS enforcement for every Agent task; fail before execution if unavailable.",
+    )
+    parser.add_argument(
+        "--sandbox-profile", type=Path,
+        help="Trusted Sandbox Profile JSON (defaults to the stable checkout's task-developer profile).",
+    )
     args = parser.parse_args()
     global ROOT
     if args.repo_root:
         ROOT = args.repo_root.resolve()
     try:
         plan = load_plan(args.plan)
+        sandbox_profile = None
+        sandbox_profile_sha256 = None
+        if args.require_sandbox and args.allow_unsandboxed_pi_write:
+            raise ValueError("--require-sandbox and --allow-unsandboxed-pi-write are mutually exclusive.")
+        if args.sandbox_profile and not args.require_sandbox:
+            raise ValueError("--sandbox-profile requires --require-sandbox.")
+        if args.require_sandbox:
+            if not args.worktrees:
+                raise ValueError("--require-sandbox requires --worktrees so the task workspace is not the stable checkout.")
+            sandbox_profile = (
+                args.sandbox_profile.resolve() if args.sandbox_profile
+                else CODE_ROOT / ".ai/runtime/examples/sandbox-profile.json"
+            )
+            from sandbox_runtime import load_profile
+            _, sandbox_profile_sha256 = load_profile(sandbox_profile)
         runs_dir = args.runs_dir if args.runs_dir.is_absolute() else ROOT / args.runs_dir
         state_path = runs_dir / "orchestrator-state.json"
         if args.dry_run:
@@ -689,10 +728,18 @@ def main() -> int:
                 raise ValueError("Existing journal does not match this plan's task IDs.")
             if state.get("worktrees_enabled", False) != args.worktrees:
                 raise ValueError("Resume must use the same --worktrees setting as the original run.")
+            if state.get("sandbox_required", False) != args.require_sandbox:
+                raise ValueError("Resume must preserve the original --require-sandbox setting.")
+            if args.require_sandbox and state.get("sandbox_profile_sha256") != sandbox_profile_sha256:
+                raise ValueError("Resume must use the exact same Sandbox Profile digest as the original run.")
         else:
             if state_path.exists():
                 raise ValueError(f"Run journal already exists: {state_path}; use --resume or choose another --runs-dir.")
-            state = initial_state(plan, args.worktrees)
+            state = initial_state(
+                plan, args.worktrees, args.require_sandbox,
+                str(sandbox_profile) if sandbox_profile else None,
+                sandbox_profile_sha256,
+            )
             save_state(state_path, state)
         if args.approve:
             if not args.resume:
@@ -716,8 +763,10 @@ def main() -> int:
         return run_plan(
             plan, runs_dir, state, args.worktrees,
             allow_unsandboxed_pi_write=args.allow_unsandboxed_pi_write,
+            require_sandbox=args.require_sandbox,
+            sandbox_profile=sandbox_profile,
         )
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
         print(f"agent-orchestrate: {exc}", file=sys.stderr)
         return 2
 

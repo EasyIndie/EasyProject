@@ -13,12 +13,13 @@
     "platform": {"enum": ["auto", "macos", "linux", "windows"]},
     "filesystem": {
       "type": "object", "additionalProperties": false,
-      "required": ["workspace_read", "workspace_write", "stable_checkout", "other_agent_workspaces", "user_home", "credentials", "runtime_directory", "temporary_directory"],
+      "required": ["workspace_read", "workspace_write", "stable_checkout", "other_agent_workspaces", "shared_git_metadata", "user_home", "credentials", "runtime_directory", "temporary_directory"],
       "properties": {
         "workspace_read": {"type": "boolean"},
         "workspace_write": {"type": "boolean"},
         "stable_checkout": {"const": "deny"},
         "other_agent_workspaces": {"const": "deny"},
+        "shared_git_metadata": {"const": "deny"},
         "user_home": {"const": "deny"},
         "credentials": {"const": "deny"},
         "runtime_directory": {"const": "deny"},
@@ -74,7 +75,7 @@
     "runtime": {
       "type": "object", "additionalProperties": false,
       "properties": {
-        "backend": {"enum": ["native", "rootless-docker", "gvisor", "kata", "firecracker"]},
+        "backend": {"enum": ["native", "macos-seatbelt", "linux-rootless-oci", "rootless-docker", "windows-appcontainer", "wsl2-worker", "gvisor", "kata", "firecracker"]},
         "image": {"type": "string"},
         "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
       }

@@ -19,6 +19,7 @@ from typing import Sequence
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
 TASK_SCHEMA = ROOT / ".ai/runtime/schemas/task.schema.json"
 HANDOFF_SCHEMA = ROOT / ".ai/runtime/schemas/handoff.schema.json"
 
@@ -49,7 +50,9 @@ def build_prompt(task: dict) -> str:
     )
 
 
-def build_command(harness: str, task: dict, prompt: str, *, allow_unsandboxed_pi_write: bool = False) -> list[str]:
+def build_command(harness: str, task: dict, prompt: str, *,
+                  allow_unsandboxed_pi_write: bool = False,
+                  sandbox_requested: bool = False) -> list[str]:
     permissions = task["permissions"]
     if permissions["secret_access"]:
         raise ValueError("secret_access=true is unsupported: adapters never grant agent access to secrets.")
@@ -62,7 +65,7 @@ def build_command(harness: str, task: dict, prompt: str, *, allow_unsandboxed_pi
         # Pi's --tools allowlist is a capability restriction, not an OS sandbox.
         # Write access requires an explicit CLI override; a task envelope alone
         # cannot authorize this unsafe host-access mode.
-        if permissions["repository_write"] and not allow_unsandboxed_pi_write:
+        if permissions["repository_write"] and not allow_unsandboxed_pi_write and not sandbox_requested:
             raise ValueError(
                 "Pi has no OS-level sandbox. Write access is disabled by default; "
                 "pass --allow-unsandboxed-pi-write only after explicitly accepting the host-access risk."
@@ -129,7 +132,8 @@ def stop_process_tree(process: subprocess.Popen[str]) -> tuple[str, str]:
 
 
 def run_harness(command: list[str], workspace: Path, timeout_seconds: int,
-                cancel_file: Path | None = None) -> tuple[int, str, str, str | None]:
+                cancel_file: Path | None = None,
+                environment: dict[str, str] | None = None) -> tuple[int, str, str, str | None]:
     """Run a harness in its own process group with timeout and file-based cancellation."""
     options: dict[str, object] = {}
     if os.name == "nt":
@@ -138,7 +142,7 @@ def run_harness(command: list[str], workspace: Path, timeout_seconds: int,
         options["start_new_session"] = True
     process = subprocess.Popen(
         command, cwd=workspace, text=True, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, env=os.environ.copy(), **options,
+        stderr=subprocess.PIPE, env=environment if environment is not None else os.environ.copy(), **options,
     )
     started = time.monotonic()
     poll_interval = min(0.2, max(0.02, timeout_seconds))
@@ -174,6 +178,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, help="Write raw stdout/stderr and a handoff draft to this JSON file")
     parser.add_argument("--cwd", type=Path, default=ROOT, help="Repository workspace in which the agent process runs")
     parser.add_argument("--cancel-file", type=Path, help="File created by the orchestrator to request cancellation")
+    parser.add_argument("--require-sandbox", action="store_true",
+                        help="Refuse to start unless a backend enforces the complete task profile.")
+    parser.add_argument("--sandbox-profile", type=Path,
+                        help="Versioned Sandbox Profile JSON required with --require-sandbox.")
+    parser.add_argument("--sandbox-runtime-dir", type=Path,
+                        default=ROOT / ".agent-runs/sandbox-runtime",
+                        help="Private control-plane runtime directory; never mounted writable into a task.")
     parser.add_argument(
         "--allow-unsandboxed-pi-write", action="store_true",
         help="Explicitly allow Pi write access without an OS sandbox; unsafe and not recommended.",
@@ -189,9 +200,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         command = build_command(
             args.harness, task, prompt,
             allow_unsandboxed_pi_write=args.allow_unsandboxed_pi_write,
+            sandbox_requested=args.require_sandbox,
         )
         workspace = resolve_workspace(args.cwd)
-    except (ValueError, OSError, KeyError) as exc:
+        if args.require_sandbox and workspace == ROOT.resolve():
+            raise ValueError("--require-sandbox requires a task-specific workspace, not the stable checkout.")
+        if args.require_sandbox and args.allow_unsandboxed_pi_write:
+            raise ValueError("--require-sandbox and --allow-unsandboxed-pi-write are mutually exclusive.")
+        if args.require_sandbox and not args.sandbox_profile:
+            raise ValueError("--require-sandbox requires --sandbox-profile.")
+        if args.sandbox_profile and not args.require_sandbox:
+            raise ValueError("--sandbox-profile requires --require-sandbox; profiles are never advisory.")
+        sandbox_evidence = {"status": "not-enforced", "reason": "legacy local execution without --require-sandbox"}
+        sandbox_environment = None
+        if args.require_sandbox:
+            from sandbox_runtime import SandboxManager
+            manager = SandboxManager()
+            command, sandbox_environment, sandbox_evidence = manager.build_command(
+                command, args.sandbox_profile, task["task_id"], workspace,
+                args.sandbox_runtime_dir, task["permissions"],
+            )
+    except (ValueError, OSError, KeyError, RuntimeError) as exc:
         print(f"agent-run: {exc}", file=sys.stderr)
         return 2
 
@@ -201,15 +230,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     cancel_file = args.cancel_file.resolve() if args.cancel_file else None
+    timeout_seconds = timeout * 60
+    if sandbox_evidence["status"] == "enforced":
+        timeout_seconds = min(timeout_seconds, sandbox_evidence["timeout_seconds"])
     exit_code, stdout, stderr, termination = run_harness(
-        command, workspace, timeout * 60, cancel_file,
+        command, workspace, timeout_seconds, cancel_file, sandbox_environment,
     )
     stdout_path, stderr_path = persist_raw_output(args.output, stdout, stderr)
     if termination == "cancelled":
         print("agent-run: cancellation request observed; process group stopped.", file=sys.stderr)
         return 130
     if termination == "timeout":
-        print(f"agent-run: timed out after {timeout} minutes; process group stopped.", file=sys.stderr)
+        print(f"agent-run: timed out after {timeout_seconds} seconds; process group stopped.", file=sys.stderr)
         return 124
     status = "partial" if exit_code == 0 else "failed"
     handoff = {
@@ -234,7 +266,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "artifacts": {
             "stdout_path": stdout_path,
             "stderr_path": stderr_path,
-            "exit_code": exit_code
+            "exit_code": exit_code,
+            "sandbox_status": sandbox_evidence["status"],
+            "sandbox_backend": sandbox_evidence.get("backend"),
+            "sandbox_profile_sha256": sandbox_evidence.get("profile_sha256"),
         }
     }
     from jsonschema import Draft202012Validator

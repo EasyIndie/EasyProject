@@ -56,7 +56,7 @@ Candidate branch -> separately approved PR
 See [sandbox-profile.schema.json](../schemas/sandbox-profile.schema.json). The profile is declarative and versioned. Policy resolution is performed by the trusted control plane. An Agent may request capabilities but cannot expand its own profile. Missing backend, unsupported policy, setup failure, or enforcement uncertainty must fail closed.
 
 The profile must constrain:
-- filesystem: task workspace only; stable checkout, other task workspaces, home, credentials and control-plane runtime denied;
+- filesystem: task workspace only; stable checkout, other task workspaces, shared Git metadata/object/ref stores, home, credentials and control-plane runtime denied;
 - process: process-tree inheritance, timeout, CPU/memory/process limits, no privilege escalation;
 - network: deny by default, no LAN/host routes, explicit brokered egress only;
 - secrets: no host environment inheritance or credential mounts; scoped short-lived broker grants only;
@@ -110,6 +110,16 @@ A backend is not production-ready until tests demonstrate denial of:
 - artifact path traversal, symlink escape, special files and oversized exports.
 
 Record backend/version, host OS, effective profile hash, task ID, start/end, exit/termination reason, resource usage, policy denials and artifact digests. Do not record secret values.
+
+## Launcher implementation status
+
+The current launcher contract is implemented in `scripts/sandbox_runtime.py`. The Orchestrator accepts the trusted control-plane switch `--require-sandbox` (default profile: the stable checkout's `.ai/runtime/examples/sandbox-profile.json`) and passes it to every Agent Runner. The Agent Runner accepts `--require-sandbox --sandbox-profile <file>` and refuses to start when no complete backend is registered. Its handoff records `sandbox_status`, backend ID and profile digest. Legacy runs without `--require-sandbox` are explicitly marked `not-enforced`; they are not considered isolated.
+
+The backend interface also requires a sanitized process environment and must cap the outer Runner timeout to the profile's timeout. A host environment copy is not an acceptable sandbox launch environment.
+
+The backend registry currently has no production implementation. `python3 scripts/sandbox_runtime.py doctor` therefore exits with status 3 and reports `enforcement_ready: false`. This is the correct safe state until an OS backend and its conformance suite are merged.
+
+See [LAUNCHER-CONTRACT.md](LAUNCHER-CONTRACT.md) for the interface and backend acceptance requirements.
 
 ## Delivery milestones
 

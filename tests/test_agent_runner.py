@@ -26,6 +26,47 @@ def task(write: bool = False) -> dict:
 
 class AgentRunnerTests(unittest.TestCase):
 
+    def test_required_sandbox_fails_closed_before_any_agent_process_starts(self):
+        import sandbox_runtime
+        with tempfile.TemporaryDirectory() as tmp:
+            profile_path = Path(tmp) / "profile.json"
+            profile_path.write_text(json.dumps({
+                "protocol_version": "1.0", "profile_id": "task-developer",
+                "isolation_level": "workspace-write", "platform": "auto",
+                "filesystem": {
+                    "workspace_read": True, "workspace_write": True,
+                    "stable_checkout": "deny", "other_agent_workspaces": "deny",
+                    "shared_git_metadata": "deny",
+                    "user_home": "deny", "credentials": "deny", "runtime_directory": "deny",
+                    "temporary_directory": "private", "read_only_paths": [], "write_paths": ["."]
+                },
+                "process": {
+                    "isolated_process_tree": True, "inherit_sandbox": True,
+                    "resource_limits": True, "timeout_enforced": True,
+                    "privilege_escalation": "deny", "max_cpu": 2,
+                    "max_memory_mb": 2048, "max_processes": 128, "timeout_seconds": 1800
+                },
+                "network": {
+                    "default": "deny", "allowed_domains": [],
+                    "allow_lan": False, "allow_host": False, "egress_proxy_required": True
+                },
+                "secrets": {
+                    "inherit_host_environment": False, "credential_mounts": False,
+                    "brokered_credentials": []
+                },
+                "artifacts": {
+                    "export": ["diff"], "direct_workspace_sharing": False,
+                    "symlink_policy": "reject-escape"
+                }
+            }), encoding="utf-8")
+            with self.assertRaises(sandbox_runtime.SandboxBackendUnavailable):
+                sandbox_runtime.SandboxManager().build_command(
+                    ["pi", "--print"], profile_path, "task-1",
+                    Path(tmp), Path(tmp) / "runtime",
+                    {"repository_read": True, "repository_write": True,
+                     "network_access": False, "secret_access": False}
+                )
+
     def test_run_harness_enforces_timeout_and_stops_process(self):
         with tempfile.TemporaryDirectory() as tmp:
             code, stdout, stderr, reason = agent_run.run_harness(
@@ -70,6 +111,14 @@ class AgentRunnerTests(unittest.TestCase):
     def test_pi_write_requires_explicit_runtime_flag(self) -> None:
         with self.assertRaisesRegex(ValueError, "allow-unsandboxed-pi-write"):
             agent_run.build_command("pi", task(write=True), "prompt")
+
+    def test_pi_write_command_can_be_built_for_mandatory_os_sandbox(self) -> None:
+        command = agent_run.build_command(
+            "pi", task(write=True), "prompt", sandbox_requested=True
+        )
+        tools = command[command.index("--tools") + 1]
+        self.assertIn("edit", tools.split(","))
+        self.assertIn("bash", tools.split(","))
 
     def test_pi_explicit_unsafe_write_exposes_edit_and_shell_tools(self) -> None:
         request = task(write=True)

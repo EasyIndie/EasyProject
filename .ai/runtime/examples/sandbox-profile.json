@@ -1,0 +1,53 @@
+{
+  "protocol_version": "1.0",
+  "profile_id": "task-developer",
+  "isolation_level": "workspace-write",
+  "platform": "auto",
+  "filesystem": {
+    "workspace_read": true,
+    "workspace_write": true,
+    "stable_checkout": "deny",
+    "other_agent_workspaces": "deny",
+    "shared_git_metadata": "deny",
+    "user_home": "deny",
+    "credentials": "deny",
+    "runtime_directory": "deny",
+    "temporary_directory": "private",
+    "read_only_paths": [],
+    "write_paths": [
+      "."
+    ]
+  },
+  "process": {
+    "isolated_process_tree": true,
+    "inherit_sandbox": true,
+    "resource_limits": true,
+    "timeout_enforced": true,
+    "privilege_escalation": "deny",
+    "max_cpu": 2,
+    "max_memory_mb": 2048,
+    "max_processes": 128,
+    "timeout_seconds": 1800
+  },
+  "network": {
+    "default": "deny",
+    "allowed_domains": [],
+    "allow_lan": false,
+    "allow_host": false,
+    "egress_proxy_required": true
+  },
+  "secrets": {
+    "inherit_host_environment": false,
+    "credential_mounts": false,
+    "brokered_credentials": []
+  },
+  "artifacts": {
+    "export": [
+      "diff",
+      "handoff",
+      "test-report"
+    ],
+    "direct_workspace_sharing": false,
+    "symlink_policy": "reject-escape"
+  }
+}

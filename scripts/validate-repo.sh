@@ -20,6 +20,11 @@ required_files=(
   ".ai/runtime/orchestrator/README.md"
   ".ai/runtime/examples/plan.json"
   "scripts/agent-run.py"
+  "scripts/sandbox_runtime.py"
+  "tests/test_sandbox_runtime.py"
+  ".ai/runtime/sandbox/LAUNCHER-CONTRACT.md"
+  ".ai/runtime/examples/sandbox-profile.json"
+  ".ai/runtime/schemas/sandbox-profile.schema.json"
   ".ai/runtime/schemas/task.schema.json"
   ".ai/runtime/schemas/handoff.schema.json"
   "scripts/evolution.py"
@@ -55,6 +60,7 @@ from pathlib import Path
 for name in (
     "scripts/bootstrap.py", "tests/test_bootstrap.py",
     "scripts/agent-run.py", "tests/test_agent_runner.py",
+    "scripts/sandbox_runtime.py", "tests/test_sandbox_runtime.py",
     "scripts/agent-orchestrate.py", "tests/test_agent_orchestrator.py",
     "scripts/evolution.py", "tests/test_evolution.py",
     "scripts/agent-benchmark.py", "tests/test_agent_benchmark.py",
