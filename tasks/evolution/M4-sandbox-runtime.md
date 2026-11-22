@@ -26,6 +26,10 @@ Introduce OS-enforced, task-scoped isolation so multiple cooperating Agents cann
 | M4.5 | Strong isolation backends | gVisor/Kata/Firecracker plugin interface and documented deployment profiles |
 | M4.6 | Brokers and audit | Scoped credential/network broker, policy hash, denial evidence, operational guide |
 
+## Backend decision
+
+The platform selection and prerequisites are recorded in [ADR-001: Production Sandbox Backend Selection](../../.ai/runtime/sandbox/ADR-001-backend-selection.md). Linux Rootless Podman is the primary full-profile backend; macOS Seatbelt is a possible weaker local profile, not a full-profile substitute. The first Linux backend must also solve shared Git metadata isolation and use a pinned runtime image. Hosted-model credentials remain blocked until M4.6.
+
 ## Execution order
 
 M4.0 is documentation and schema only. M4.1 is merged. M4.2a defines the backend interface and fail-closed launch path, but does not provide OS enforcement. M4.2b adds a real host backend and must not be marked complete until process-tree tests prove that file tools, shell tools, MCP/hooks and descendants share the boundary. M4.3 can be developed independently after the immutable artifact contract is agreed. Linux backend work follows the broker and policy interfaces.
