@@ -61,7 +61,9 @@ class AgentRunnerTests(unittest.TestCase):
             with self.assertRaises(sandbox_runtime.SandboxBackendUnavailable):
                 sandbox_runtime.SandboxManager().build_command(
                     ["pi", "--print"], profile_path, "task-1",
-                    Path(tmp), Path(tmp) / "runtime"
+                    Path(tmp), Path(tmp) / "runtime",
+                    {"repository_read": True, "repository_write": True,
+                     "network_access": False, "secret_access": False}
                 )
 
     def test_run_harness_enforces_timeout_and_stops_process(self):
