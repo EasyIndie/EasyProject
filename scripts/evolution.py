@@ -378,10 +378,10 @@ def start(args: argparse.Namespace) -> int:
                 "Pi Evolution writes are disabled by default because Pi has no OS-level sandbox. "
                 "Use --allow-unsandboxed-pi-write only after explicitly accepting this risk."
             )
-        task["harness_options"] = {"pi_unsandboxed_write": True}
         task["constraints"].append(
-            "This task uses explicitly approved unsandboxed Pi write access. "
-            "The Git Worktree is not a security boundary; do not treat host access as restricted."
+            "This task requires explicitly approved unsandboxed Pi write access. "
+            "The authorization is supplied by the Evolution control plane, not this editable task file. "
+            "The Git Worktree is not a security boundary."
         )
 
     environment = preflight(args.harness)
