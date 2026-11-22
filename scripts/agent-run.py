@@ -130,7 +130,8 @@ def stop_process_tree(process: subprocess.Popen[str]) -> tuple[str, str]:
 
 
 def run_harness(command: list[str], workspace: Path, timeout_seconds: int,
-                cancel_file: Path | None = None) -> tuple[int, str, str, str | None]:
+                cancel_file: Path | None = None,
+                environment: dict[str, str] | None = None) -> tuple[int, str, str, str | None]:
     """Run a harness in its own process group with timeout and file-based cancellation."""
     options: dict[str, object] = {}
     if os.name == "nt":
@@ -139,7 +140,7 @@ def run_harness(command: list[str], workspace: Path, timeout_seconds: int,
         options["start_new_session"] = True
     process = subprocess.Popen(
         command, cwd=workspace, text=True, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, env=os.environ.copy(), **options,
+        stderr=subprocess.PIPE, env=environment if environment is not None else os.environ.copy(), **options,
     )
     started = time.monotonic()
     poll_interval = min(0.2, max(0.02, timeout_seconds))
@@ -204,10 +205,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.sandbox_profile and not args.require_sandbox:
             raise ValueError("--sandbox-profile requires --require-sandbox; profiles are never advisory.")
         sandbox_evidence = {"status": "not-enforced", "reason": "legacy local execution without --require-sandbox"}
+        sandbox_environment = None
         if args.require_sandbox:
             from sandbox_runtime import SandboxManager
             manager = SandboxManager()
-            command, sandbox_evidence = manager.build_command(
+            command, sandbox_environment, sandbox_evidence = manager.build_command(
                 command, args.sandbox_profile, task["task_id"], workspace,
                 args.sandbox_runtime_dir,
             )
@@ -221,15 +223,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     cancel_file = args.cancel_file.resolve() if args.cancel_file else None
+    timeout_seconds = timeout * 60
+    if sandbox_evidence["status"] == "enforced":
+        timeout_seconds = min(timeout_seconds, sandbox_evidence["timeout_seconds"])
     exit_code, stdout, stderr, termination = run_harness(
-        command, workspace, timeout * 60, cancel_file,
+        command, workspace, timeout_seconds, cancel_file, sandbox_environment,
     )
     stdout_path, stderr_path = persist_raw_output(args.output, stdout, stderr)
     if termination == "cancelled":
         print("agent-run: cancellation request observed; process group stopped.", file=sys.stderr)
         return 130
     if termination == "timeout":
-        print(f"agent-run: timed out after {timeout} minutes; process group stopped.", file=sys.stderr)
+        print(f"agent-run: timed out after {timeout_seconds} seconds; process group stopped.", file=sys.stderr)
         return 124
     status = "partial" if exit_code == 0 else "failed"
     handoff = {
