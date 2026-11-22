@@ -71,7 +71,15 @@ class EvolutionContractTests(unittest.TestCase):
             self.assertEqual(manifest["stable"]["base_sha"], "abc123")
             self.assertEqual(manifest["candidate"]["branch"], "evolution/manifest-test")
             self.assertEqual(manifest["task_source"], "manual-goal")
+            self.assertFalse(manifest["pi_unsandboxed_write_authorized"])
             self.assertFalse(manifest["credential_values_recorded"])
+            authorized_path = evolution.write_manifest(
+                run_dir / "pi", "pi-manifest", "Pi write", "pi",
+                ["python-unittest"], environment,
+                pi_unsandboxed_write_authorized=True,
+            )
+            authorized = json.loads(authorized_path.read_text(encoding="utf-8"))
+            self.assertTrue(authorized["pi_unsandboxed_write_authorized"])
             self.assertNotIn("api_key", json.dumps(manifest).lower())
 
     def make_approved_artifact(self, root):
