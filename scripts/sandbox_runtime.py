@@ -130,9 +130,11 @@ class SandboxManager:
 
     def doctor(self) -> dict:
         capabilities = self.capabilities()
+        current = host_platform()
         ready = any(
-            item.available and item.enforces_filesystem and item.enforces_network
-            and item.isolates_process_tree and item.enforces_resource_limits
+            item.platform == current and item.available and item.enforces_filesystem
+            and item.enforces_network and item.isolates_process_tree
+            and item.enforces_resource_limits
             for item in capabilities
         )
         return {
@@ -167,8 +169,20 @@ class SandboxManager:
             runtime_directory=runtime_directory.resolve(),
             timeout_seconds=timeout_seconds,
         )
+        requested_backend = profile.get("runtime", {}).get("backend")
+        backend_aliases = {
+            "macos-seatbelt": "macos-seatbelt",
+            "linux-rootless-oci": "linux-rootless-oci",
+            "rootless-docker": "rootless-docker",
+            "windows-appcontainer": "windows-appcontainer",
+            "wsl2-worker": "wsl2-worker",
+            "gvisor": "gvisor", "kata": "kata", "firecracker": "firecracker",
+        }
+        selected_id = backend_aliases.get(requested_backend, requested_backend)
         candidates = []
         for backend in self._backends.values():
+            if selected_id and backend.backend_id != selected_id:
+                continue
             caps = backend.probe()
             if (caps.platform == current and caps.available
                     and caps.enforces_filesystem and caps.enforces_network
