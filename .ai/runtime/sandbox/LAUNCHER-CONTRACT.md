@@ -26,7 +26,7 @@ The manager rejects partial backends. A backend must not claim support based on 
 
 Implemented in `scripts/sandbox_runtime.py`:
 
-- `SandboxBackend.probe() -> SandboxCapabilities`
+- `SandboxBackend.probe() -> SandboxCapabilities` (must prove both process-tree inheritance and descendant cleanup on task exit)
 - `SandboxBackend.build_command(command, spec) -> argv`
 - `SandboxBackend.build_environment(spec) -> minimal env`
 - `SandboxManager.doctor()`
