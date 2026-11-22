@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easyindie.github.io/EasyProject/schemas/artifact-manifest.schema.json",
+  "title": "EasyProject Immutable Artifact Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "artifact_id", "task_id", "kind", "created_at", "source_revision", "files", "total_bytes"],
+  "properties": {
+    "protocol_version": {"const": "1.0"},
+    "artifact_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "task_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"},
+    "kind": {"enum": ["diff", "patch", "handoff", "test-report", "review-evidence"]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "source_revision": {"type": ["string", "null"], "pattern": "^[0-9a-f]{7,64}$"},
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "size_bytes"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 1024},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "size_bytes": {"type": "integer", "minimum": 0, "maximum": 10485760}
+        }
+      }
+    },
+    "total_bytes": {"type": "integer", "minimum": 0, "maximum": 52428800}
+  }
+}
