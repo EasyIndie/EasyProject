@@ -565,8 +565,7 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                         sandbox_artifacts.get("sandbox_status") == "enforced"
                         and isinstance(sandbox_artifacts.get("sandbox_backend"), str)
                         and bool(sandbox_artifacts.get("sandbox_backend"))
-                        and isinstance(sandbox_artifacts.get("sandbox_profile_sha256"), str)
-                        and len(sandbox_artifacts["sandbox_profile_sha256"]) == 64
+                        and re.fullmatch(r"[0-9a-f]{64}", str(sandbox_artifacts.get("sandbox_profile_sha256", "")))
                     )
                 except (OSError, json.JSONDecodeError) as exc:
                     sandbox_error = f"Required sandbox handoff evidence is missing or invalid: {exc}"
