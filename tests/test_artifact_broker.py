@@ -77,6 +77,21 @@ class ArtifactBrokerTests(unittest.TestCase):
             with self.subTest(path=path), self.assertRaises(broker.ArtifactError):
                 broker.normalize_relative_path(path)
 
+    def test_case_insensitive_and_file_directory_collisions_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = self.make_workspace(root)
+            with self.assertRaises(broker.ArtifactError):
+                broker.export_artifact(
+                    workspace, root / "store", "task-01", "diff",
+                    ["src/main.py", "SRC/MAIN.PY"]
+                )
+            with self.assertRaises(broker.ArtifactError):
+                broker.export_artifact(
+                    workspace, root / "store", "task-01", "diff",
+                    ["src", "src/main.py"]
+                )
+
     def test_sensitive_paths_are_never_exported(self):
         for path in (".env", ".env.production", ".ssh/id_ed25519", ".aws/credentials", "build/signing.p12"):
             with self.subTest(path=path), self.assertRaises(broker.ArtifactError):
