@@ -12,7 +12,7 @@ A backend is eligible only if it can enforce all of the following for the reques
 
 - workspace-only filesystem access, including denial of stable checkout, other task workspaces, shared Git common metadata/object/ref stores, user home, credentials and control-plane runtime;
 - default-deny network, no host/LAN access, and explicit egress proxy policy;
-- process-tree inheritance and reliable termination;
+- process-tree inheritance and reliable termination, including killing every descendant before the launcher reports task completion;
 - CPU, memory, process-count and wall-clock limits;
 - no privilege escalation and no host container-runtime socket;
 - effective-policy evidence (backend/version, profile digest and platform);
