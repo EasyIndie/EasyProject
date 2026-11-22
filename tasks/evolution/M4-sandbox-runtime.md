@@ -19,10 +19,10 @@ Introduce OS-enforced, task-scoped isolation so multiple cooperating Agents cann
 | M4.0 | Sandbox Contract + architecture | Versioned JSON Schema, threat model, trust-zone and fail-closed rules |
 | M4.1 | Pi unsafe-write correction | Generated tasks never auto-authorize; explicit CLI override; regression tests; default refusal |
 | M4.2a | Launcher contract | Backend interface, profile validation, capability doctor, handoff enforcement evidence, fail-closed Runner integration |
-| M4.2b | First OS backend | macOS Seatbelt full-process launcher, sanitized environment, effective-policy doctor and macOS conformance tests |
+| M4.2b | Backend decision | Accepted platform ADR; Linux Rootless Podman selected for full profile; shared Git metadata and credential-broker dependencies documented |
 | M4.3a | Artifact Broker core | Content-addressed export, manifest/hash verification, read-only reviewer materialization, path/symlink/type/size validation |
 | M4.3b | Artifact Broker integration | Sandbox-required Orchestrator exports immutable review artifacts after Agent and checks exit; approval and Integrator verify task/base/fingerprint binding |
-| M4.4 | Linux OCI backend | Rootless runtime, namespaces, seccomp, LSM, resource limits, network deny, conformance suite |
+| M4.4 | Linux Rootless OCI backend | Rootless Podman, cgroup-v2 delegated limits, namespaces, seccomp/LSM, network deny, private Git metadata, conformance suite |
 | M4.5 | Strong isolation backends | gVisor/Kata/Firecracker plugin interface and documented deployment profiles |
 | M4.6 | Brokers and audit | Scoped credential/network broker, policy hash, denial evidence, operational guide |
 
