@@ -22,7 +22,10 @@ Introduce OS-enforced, task-scoped isolation so multiple cooperating Agents cann
 | M4.2b | Backend decision | Accepted platform ADR; Linux Rootless Podman selected for full profile; shared Git metadata and credential-broker dependencies documented |
 | M4.3a | Artifact Broker core | Content-addressed export, manifest/hash verification, read-only reviewer materialization, path/symlink/type/size validation |
 | M4.3b | Artifact Broker integration | Sandbox-required Orchestrator exports immutable review artifacts after Agent and checks exit; approval and Integrator verify task/base/fingerprint binding |
-| M4.4.1 | Rootless Podman capability probe | Verify rootless mode, subordinate UID/GID mappings, cgroup v2, systemd delegation and cpu/memory/pids controllers |\n| M4.4.2 | Rootless OCI launcher | Pinned image, network none, namespaces, read-only rootfs, workspace-only mount, limits, sanitized Agent environment |\n| M4.4.3 | Git metadata isolation | Reject shared worktree pointer metadata; move toward independent task clones or patch-only Agent workspaces |\n| M4.4.4 | Linux conformance suite | Prove filesystem, network, process-tree and effective resource enforcement on a dedicated Linux worker |
+| M4.4.1 | Rootless Podman capability probe | Verify rootless mode, subordinate UID/GID mappings, cgroup v2, systemd delegation and cpu/memory/pids controllers |
+| M4.4.2 | Rootless OCI launcher | Pinned image, network none, namespaces, read-only rootfs, workspace-only mount, limits, sanitized Agent environment |
+| M4.4.3 | Git metadata isolation | Reject shared worktree pointer metadata; move toward independent task clones or patch-only Agent workspaces |
+| M4.4.4 | Linux conformance suite | Prove filesystem, network, process-tree and effective resource enforcement on a dedicated Linux worker |
 | M4.5 | Strong isolation backends | gVisor/Kata/Firecracker plugin interface and documented deployment profiles |
 | M4.6 | Brokers and audit | Scoped credential/network broker, policy hash, denial evidence, operational guide |
 
