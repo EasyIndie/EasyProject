@@ -699,6 +699,8 @@ def main() -> int:
         plan = load_plan(args.plan)
         sandbox_profile = None
         sandbox_profile_sha256 = None
+        if args.require_sandbox and args.allow_unsandboxed_pi_write:
+            raise ValueError("--require-sandbox and --allow-unsandboxed-pi-write are mutually exclusive.")
         if args.sandbox_profile and not args.require_sandbox:
             raise ValueError("--sandbox-profile requires --require-sandbox.")
         if args.require_sandbox:
