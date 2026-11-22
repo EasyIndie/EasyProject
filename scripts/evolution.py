@@ -103,7 +103,8 @@ def preflight(harness: str) -> dict:
 def write_manifest(run_dir: Path, run_id: str, goal: str,
                    harness: str, checks: list[str], preflight_result: dict,
                    task_source: str = "manual-goal", task_id: str | None = None,
-                   approval_evidence: dict | None = None) -> Path:
+                   approval_evidence: dict | None = None,
+                   pi_unsandboxed_write_authorized: bool = False) -> Path:
     manifest = {
         "manifest_version": "1.0",
         "run_id": run_id,
