@@ -707,7 +707,10 @@ def main() -> int:
             marker = request_cancel(args.cancel, state, runs_dir)
             print(f"{args.cancel}: cancellation requested; runner confirmation is pending ({marker})")
             return 0
-        return run_plan(plan, runs_dir, state, args.worktrees)
+        return run_plan(
+            plan, runs_dir, state, args.worktrees,
+            allow_unsandboxed_pi_write=args.allow_unsandboxed_pi_write,
+        )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"agent-orchestrate: {exc}", file=sys.stderr)
         return 2
