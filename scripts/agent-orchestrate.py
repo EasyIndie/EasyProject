@@ -321,6 +321,7 @@ def prepare_worktree(repo: Path, runs_dir: Path, task_id: str,
             git_output(path, "remote", "remove", "origin")
             git_output(path, "config", "user.name", "EasyProject Agent")
             git_output(path, "config", "user.email", "agent@localhost.invalid")
+            git_output(path, "config", "core.hooksPath", os.devnull)
             git_dir = (path / ".git").resolve()
             if (git_dir / "commondir").exists() or (git_dir / "objects/info/alternates").exists():
                 raise ValueError("Independent clone unexpectedly contains shared Git metadata.")
