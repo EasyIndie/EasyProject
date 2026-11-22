@@ -27,7 +27,8 @@ MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_TOTAL_BYTES = 50 * 1024 * 1024
 BLOCKED_NAMES = {
     ".ssh", ".aws", ".azure", ".kube", ".docker", ".netrc", ".npmrc",
-    ".pypirc", "credentials", "credential", "secrets", "secret",
+    ".pypirc", ".git-credentials", ".gitconfig", ".config", ".envrc",
+    "credentials", "credential", "secrets", "secret",
     "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa", "authorized_keys",
     "credentials.json", "service-account.json", "google-credentials.json",
     "token.json", "access_token", "refresh_token", "oauth.json",
@@ -287,11 +288,14 @@ def verify_artifact(artifact_dir: Path) -> dict:
         expected.add(relative.as_posix())
 
     actual: set[str] = set()
+    actual_directories: set[str] = set()
     for current, directories, files in os.walk(artifact_dir, followlinks=False):
         current_path = Path(current)
         for name in directories:
-            if (current_path / name).is_symlink():
+            path = current_path / name
+            if path.is_symlink():
                 raise ArtifactError("Artifact contains a symlink directory.")
+            actual_directories.add(path.relative_to(artifact_dir).as_posix())
         for name in files:
             path = current_path / name
             if path.is_symlink() or not path.is_file():
@@ -299,8 +303,19 @@ def verify_artifact(artifact_dir: Path) -> dict:
             relative = path.relative_to(artifact_dir).as_posix()
             if relative != "artifact.json":
                 actual.add(relative)
-    if actual != expected:
-        raise ArtifactError("Artifact contains missing or undeclared files.")
+    expected_directories = {
+        PurePosixPath(item).parent.as_posix()
+        for item in expected
+        if len(PurePosixPath(item).parts) > 1
+    }
+    all_expected_directories: set[str] = set()
+    for item in expected:
+        parent = PurePosixPath(item).parent
+        while parent.as_posix() != ".":
+            all_expected_directories.add(parent.as_posix())
+            parent = parent.parent
+    if actual != expected or actual_directories != all_expected_directories:
+        raise ArtifactError("Artifact contains missing or undeclared files/directories.")
     return manifest
 
 
