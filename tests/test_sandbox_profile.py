@@ -23,6 +23,7 @@ def baseline_profile() -> dict:
             "workspace_write": True,
             "stable_checkout": "deny",
             "other_agent_workspaces": "deny",
+            "shared_git_metadata": "deny",
             "user_home": "deny",
             "credentials": "deny",
             "runtime_directory": "deny",
@@ -75,7 +76,7 @@ class SandboxProfileTests(unittest.TestCase):
             Draft202012Validator(SCHEMA).validate(profile)
 
     def test_profile_cannot_allow_stable_checkout_or_other_agents(self):
-        for key in ("stable_checkout", "other_agent_workspaces"):
+        for key in ("stable_checkout", "other_agent_workspaces", "shared_git_metadata"):
             profile = baseline_profile()
             profile["filesystem"][key] = "allow"
             with self.subTest(key=key), self.assertRaises(Exception):
