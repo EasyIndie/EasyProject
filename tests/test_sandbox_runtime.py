@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("sandbox_runtime", ROOT / "scripts/sandbox_runtime.py")
 sandbox = importlib.util.module_from_spec(SPEC)
 assert SPEC and SPEC.loader
+import sys
+sys.modules["sandbox_runtime"] = sandbox
 SPEC.loader.exec_module(sandbox)
 
 
@@ -60,6 +62,9 @@ class FakeBackend:
     def build_command(self, command, spec):
         return ["sandbox-test-wrapper", *command]
 
+    def build_environment(self, spec):
+        return {"PATH": "/sandbox/bin", "HOME": "/sandbox/home"}
+
 
 class SandboxRuntimeTests(unittest.TestCase):
     def test_doctor_fails_closed_when_no_backend_is_registered(self):
@@ -100,11 +105,12 @@ class SandboxRuntimeTests(unittest.TestCase):
             profile_path = Path(tmp) / "profile.json"
             profile_path.write_text(json.dumps(profile()), encoding="utf-8")
             manager = sandbox.SandboxManager([FakeBackend()])
-            command, evidence = manager.build_command(
+            command, environment, evidence = manager.build_command(
                 ["claude", "-p"], profile_path, "task-1",
                 Path(tmp), Path(tmp) / "runtime"
             )
             self.assertEqual(command, ["sandbox-test-wrapper", "claude", "-p"])
+            self.assertEqual(environment, {"PATH": "/sandbox/bin", "HOME": "/sandbox/home"})
             self.assertEqual(evidence["status"], "enforced")
             self.assertEqual(evidence["backend"], "test-backend")
             self.assertEqual(len(evidence["profile_sha256"]), 64)
