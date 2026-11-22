@@ -26,7 +26,7 @@ def profile() -> dict:
         "filesystem": {
             "workspace_read": True, "workspace_write": True,
             "stable_checkout": "deny", "other_agent_workspaces": "deny",
-            "user_home": "deny", "credentials": "deny", "runtime_directory": "deny",
+            "shared_git_metadata": "deny", "user_home": "deny", "credentials": "deny", "runtime_directory": "deny",
             "temporary_directory": "private", "read_only_paths": [], "write_paths": ["."]
         },
         "process": {
