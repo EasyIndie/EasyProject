@@ -175,7 +175,14 @@ class OrchestratorTests(unittest.TestCase):
             }
             evidence_path = task_dir / "review-evidence.json"
             evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
-            artifact = orchestrator.publish_review_artifact(evidence, runs, "task-a", 1)
+            artifact = orchestrator.publish_review_artifact(
+                evidence, runs, "task-a", 1,
+                {
+                    "sandbox_status": "enforced",
+                    "sandbox_backend": "test-backend",
+                    "sandbox_profile_sha256": "b" * 64,
+                },
+            )
             record = {
                 "task_id": "task-a",
                 "review_evidence": str(evidence_path),
