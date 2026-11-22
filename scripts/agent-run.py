@@ -203,6 +203,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             sandbox_requested=args.require_sandbox,
         )
         workspace = resolve_workspace(args.cwd)
+        if args.require_sandbox and workspace == ROOT.resolve():
+            raise ValueError("--require-sandbox requires a task-specific workspace, not the stable checkout.")
         if args.require_sandbox and args.allow_unsandboxed_pi_write:
             raise ValueError("--require-sandbox and --allow-unsandboxed-pi-write are mutually exclusive.")
         if args.require_sandbox and not args.sandbox_profile:
@@ -216,7 +218,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             manager = SandboxManager()
             command, sandbox_environment, sandbox_evidence = manager.build_command(
                 command, args.sandbox_profile, task["task_id"], workspace,
-                args.sandbox_runtime_dir,
+                args.sandbox_runtime_dir, task["permissions"],
             )
     except (ValueError, OSError, KeyError, RuntimeError) as exc:
         print(f"agent-run: {exc}", file=sys.stderr)
