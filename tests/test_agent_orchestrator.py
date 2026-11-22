@@ -101,6 +101,22 @@ class OrchestratorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "only running tasks"):
                 orchestrator.request_cancel("task-a", state, runs)
 
+    def test_pi_write_authorization_comes_only_from_control_plane_flag(self):
+        task_path = Path("task.json")
+        output = Path("handoff.json")
+        workspace = Path("workspace")
+        cancel = Path("cancel.request")
+        # An editable Task Envelope is not an authorization source.
+        command = orchestrator.build_runner_command(
+            task_path, "pi", output, workspace, cancel, False
+        )
+        self.assertNotIn("--allow-unsandboxed-pi-write", command)
+        # Only the explicit trusted control-plane flag grants the override.
+        command = orchestrator.build_runner_command(
+            task_path, "pi", output, workspace, cancel, True
+        )
+        self.assertIn("--allow-unsandboxed-pi-write", command)
+
     def test_valid_dag(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "plan.json"

@@ -2,12 +2,12 @@
 
 For a fresh local clone, Agent session startup, canonical-template detection, harness routing, isolated iteration, and the human review/PR handoff, start with the [local template maintenance and self-evolution playbook](AGENT-PLAYBOOK.md). The playbook is the Agent-facing entry point; this document remains the detailed runtime command reference.
 
-EasyProject self-evolution uses two nested isolation boundaries:
+EasyProject self-evolution uses two nested workspaces with a trusted control plane:
 
-1. The **stable checkout** creates and controls a candidate Git worktree.
-2. The candidate's own **Evolution runtime** runs the task orchestrator, which creates a second worktree for the coding Agent.
+1. The **stable checkout** owns the trusted Evolution entry point, Orchestrator, and Agent Runner code.
+2. The control plane operates on a candidate Git worktree and creates a second task worktree for the coding Agent.
 
-The stable checkout is never the Agent's write workspace. The candidate branch is not merged or pushed automatically. **All mutable run data is stored outside both Git worktrees**, so task envelopes, plans, journals, logs, and evidence cannot pollute the template or candidate source tree.
+The candidate is mutable and must never supply the Orchestrator or Runner executable code used to control itself. The stable checkout is never the Agent's write workspace. The candidate branch is not merged or pushed automatically. **All mutable run data is stored outside both Git worktrees**, so task envelopes, plans, journals, logs, and evidence cannot pollute the template or candidate source tree.
 
 ## Discover, approve, and execute a candidate
 
@@ -78,7 +78,7 @@ Requirements:
 - A configured and authenticated `codex`, `claude`, or `pi` CLI on `PATH`.
 - The selected Agent CLI must be permitted to write to its isolated workspace by its own local permission configuration.
 
-Pi is supported, but Pi has no OS-level sandbox. A Pi self-evolution task therefore carries `harness_options.pi_unsandboxed_write=true` in its Task Envelope, and an approved discovery artifact must contain the same acknowledgement or Evolution rejects it. Treat Pi runs as worktree-isolated, not sandboxed: network and external side effects are policy constraints, not enforced boundaries. Prefer Codex (`workspace-write` sandbox) when a real boundary is required.
+Pi has no OS-level sandbox. Pi Evolution write tasks are rejected by default. Supply `--allow-unsandboxed-pi-write` explicitly to `evolution.py start` only after accepting host-access risk. Evolution records the initial opt-in in its external runtime manifest for audit and forwards each explicit invocation as an Orchestrator CLI control-plane flag; an editable Task Envelope or manifest cannot grant the permission. Every Pi resume requires the human to repeat `--allow-unsandboxed-pi-write`. The override does not create a sandbox and a Worktree does not restrict host access. Prefer Codex (`workspace-write` sandbox) until the whole-process task sandbox is implemented.
 
 First run the non-mutating prerequisite check. It verifies the Git checkout, clean working tree, Python dependency, and CLI executable/version. It does not inspect or print credentials and does not prove that the CLI is authenticated:
 

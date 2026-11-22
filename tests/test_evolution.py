@@ -4,6 +4,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -71,7 +72,15 @@ class EvolutionContractTests(unittest.TestCase):
             self.assertEqual(manifest["stable"]["base_sha"], "abc123")
             self.assertEqual(manifest["candidate"]["branch"], "evolution/manifest-test")
             self.assertEqual(manifest["task_source"], "manual-goal")
+            self.assertFalse(manifest["pi_unsandboxed_write_authorized"])
             self.assertFalse(manifest["credential_values_recorded"])
+            authorized_path = evolution.write_manifest(
+                run_dir / "pi", "pi-manifest", "Pi write", "pi",
+                ["python-unittest"], environment,
+                pi_unsandboxed_write_authorized=True,
+            )
+            authorized = json.loads(authorized_path.read_text(encoding="utf-8"))
+            self.assertTrue(authorized["pi_unsandboxed_write_authorized"])
             self.assertNotIn("api_key", json.dumps(manifest).lower())
 
     def make_approved_artifact(self, root):
@@ -241,12 +250,37 @@ class EvolutionContractTests(unittest.TestCase):
             self.assertEqual(report["execution"]["tasks"]["task-a"]["status"], "awaiting_review")
             self.assertEqual(report["execution"]["tasks"]["task-a"]["automated_checks"], "passed")
 
-    def test_pi_harness_records_unsandboxed_write_acknowledgement(self):
+    def test_pi_task_does_not_auto_authorize_unsandboxed_write(self):
         task = evolution.make_task(
             "pi-case", "Add a regression test", "pi", ["python-unittest"]
         )
-        self.assertEqual(task["harness_options"], {"pi_unsandboxed_write": True})
-        self.assertTrue(any("no OS-level sandbox" in item for item in task["constraints"]))
+        self.assertNotIn("harness_options", task)
+
+    def test_pi_resume_requires_fresh_cli_opt_in_not_manifest_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            candidate = Path(tmp) / "candidate"
+            candidate.mkdir()
+            run_dir = Path(tmp) / "runtime"
+            run_dir.mkdir()
+            (run_dir / "manifest.json").write_text(
+                json.dumps({
+                    "harness": "pi",
+                    "pi_unsandboxed_write_authorized": True,
+                }),
+                encoding="utf-8",
+            )
+            args = type("Args", (), {
+                "id": "pi-case", "action": "resume",
+                "allow_unsandboxed_pi_write": False,
+            })()
+            with patch.object(evolution, "candidate_paths", return_value=(candidate, "branch", run_dir)):
+                with self.assertRaisesRegex(ValueError, "fresh human"):
+                    evolution.continue_run(args)
+
+                args.allow_unsandboxed_pi_write = True
+                with patch.object(evolution, "invoke_candidate", return_value=0) as invoke:
+                    self.assertEqual(evolution.continue_run(args), 0)
+                    self.assertTrue(invoke.call_args.kwargs["allow_unsandboxed_pi_write"])
 
     def test_non_pi_task_has_no_harness_options(self):
         task = evolution.make_task(
@@ -254,12 +288,6 @@ class EvolutionContractTests(unittest.TestCase):
         )
         self.assertNotIn("harness_options", task)
 
-    def test_rejects_approved_pi_task_without_acknowledgement(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / "repo"
-            _, artifact, task_id, _ = self.make_approved_artifact(root)
-            with self.assertRaisesRegex(ValueError, "pi_unsandboxed_write"):
-                evolution.load_approved_task(artifact, task_id, "pi", root)
 
     def test_report_requires_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -21,8 +21,9 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[1]
-RUNNER = ROOT / "scripts/agent-run.py"
+CODE_ROOT = Path(__file__).resolve().parents[1]
+ROOT = CODE_ROOT
+RUNNER = CODE_ROOT / "scripts/agent-run.py"
 TERMINAL = {"completed", "failed", "blocked", "cancelled"}
 ACCEPTANCE_CHECK_TIMEOUT_SECONDS = 900
 
@@ -362,7 +363,21 @@ def resolve_task_path(task_file: str, runs_dir: Path) -> Path:
     return task_path
 
 
-def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_worktrees: bool) -> int:
+def build_runner_command(task_path: Path, harness: str, output: Path, workspace: Path,
+                         cancel_file: Path, allow_unsandboxed_pi_write: bool) -> list[str]:
+    """Build the runner argv; Pi's unsafe write opt-in comes only from the control plane."""
+    command = [
+        sys.executable, str(RUNNER), "--task", str(task_path),
+        "--harness", harness, "--output", str(output), "--cwd", str(workspace),
+        "--cancel-file", str(cancel_file),
+    ]
+    if harness == "pi" and allow_unsandboxed_pi_write:
+        command.append("--allow-unsandboxed-pi-write")
+    return command
+
+
+def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_worktrees: bool,
+             allow_unsandboxed_pi_write: bool = False) -> int:
     by_id = {item["task_id"]: item for item in plan["tasks"]}
     state_path = runs_dir / "orchestrator-state.json"
     progress = True
@@ -392,12 +407,21 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             task_output.parent.mkdir(parents=True, exist_ok=True)
             workspace = prepare_worktree(ROOT, runs_dir, task_id, record) if use_worktrees else ROOT
             cancel_file = runs_dir / task_id / f"cancel-attempt-{attempt}.request"
-            command = [
-                sys.executable, str(RUNNER), "--task", str(task_path),
-                "--harness", item.get("harness", "codex"),
-                "--output", str(task_output), "--cwd", str(workspace),
-                "--cancel-file", str(cancel_file),
-            ]
+            task_envelope = json.loads(task_path.read_text(encoding="utf-8"))
+            harness = item.get("harness", "codex")
+            if (
+                harness == "pi"
+                and task_envelope.get("permissions", {}).get("repository_write") is True
+                and not allow_unsandboxed_pi_write
+            ):
+                raise ValueError(
+                    f"{task_id}: Pi write requires the orchestrator's explicit "
+                    "--allow-unsandboxed-pi-write control-plane flag."
+                )
+            command = build_runner_command(
+                task_path, harness, task_output, workspace, cancel_file,
+                allow_unsandboxed_pi_write,
+            )
             record.update(
                 status="running", attempts=attempt, cancel_file=str(cancel_file),
                 started_at=now(), updated_at=now(),
@@ -408,7 +432,6 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             result = subprocess.run(command, cwd=ROOT, check=False)
             record["last_exit_code"] = result.returncode
             record["handoff"] = str(task_output)
-            task_envelope = json.loads(task_path.read_text(encoding="utf-8"))
             automated_checks = {"status": "not_configured", "results": []}
             if result.returncode == 0:
                 automated_checks = run_acceptance_checks(
@@ -632,6 +655,8 @@ def integrate_task(repo: Path, task_id: str, state: dict[str, Any],
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", required=True, type=Path)
+    parser.add_argument("--repo-root", type=Path,
+                        help="Repository workspace to operate on; orchestration code remains trusted.")
     parser.add_argument("--runs-dir", type=Path, default=Path(".agent-runs/orchestrator"))
     parser.add_argument("--resume", action="store_true", help="Resume from the existing run journal.")
     actions = parser.add_mutually_exclusive_group()
@@ -640,7 +665,14 @@ def main() -> int:
     actions.add_argument("--cancel", metavar="TASK_ID", help="Request cooperative cancellation of a running task.")
     parser.add_argument("--dry-run", action="store_true", help="Validate and display the DAG without creating journals or worktrees.")
     parser.add_argument("--worktrees", action="store_true", help="Run each task in its own detached Git worktree.")
+    parser.add_argument(
+        "--allow-unsandboxed-pi-write", action="store_true",
+        help="Unsafe: explicitly authorize Pi write tasks without an OS sandbox.",
+    )
     args = parser.parse_args()
+    global ROOT
+    if args.repo_root:
+        ROOT = args.repo_root.resolve()
     try:
         plan = load_plan(args.plan)
         runs_dir = args.runs_dir if args.runs_dir.is_absolute() else ROOT / args.runs_dir
@@ -681,7 +713,10 @@ def main() -> int:
             marker = request_cancel(args.cancel, state, runs_dir)
             print(f"{args.cancel}: cancellation requested; runner confirmation is pending ({marker})")
             return 0
-        return run_plan(plan, runs_dir, state, args.worktrees)
+        return run_plan(
+            plan, runs_dir, state, args.worktrees,
+            allow_unsandboxed_pi_write=args.allow_unsandboxed_pi_write,
+        )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"agent-orchestrate: {exc}", file=sys.stderr)
         return 2

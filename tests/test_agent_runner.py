@@ -67,14 +67,15 @@ class AgentRunnerTests(unittest.TestCase):
         self.assertIn("--permission-mode", command)
         self.assertIn("plan", command)
 
-    def test_pi_write_requires_explicit_unsandboxed_acknowledgement(self) -> None:
-        with self.assertRaisesRegex(ValueError, "pi_unsandboxed_write"):
+    def test_pi_write_requires_explicit_runtime_flag(self) -> None:
+        with self.assertRaisesRegex(ValueError, "allow-unsandboxed-pi-write"):
             agent_run.build_command("pi", task(write=True), "prompt")
 
-    def test_pi_acknowledged_write_exposes_edit_and_shell_tools(self) -> None:
+    def test_pi_explicit_unsafe_write_exposes_edit_and_shell_tools(self) -> None:
         request = task(write=True)
-        request["harness_options"] = {"pi_unsandboxed_write": True}
-        command = agent_run.build_command("pi", request, "prompt")
+        command = agent_run.build_command(
+            "pi", request, "prompt", allow_unsandboxed_pi_write=True
+        )
         tools = command[command.index("--tools") + 1]
         self.assertEqual(
             set(tools.split(",")),

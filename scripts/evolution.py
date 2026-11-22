@@ -103,7 +103,8 @@ def preflight(harness: str) -> dict:
 def write_manifest(run_dir: Path, run_id: str, goal: str,
                    harness: str, checks: list[str], preflight_result: dict,
                    task_source: str = "manual-goal", task_id: str | None = None,
-                   approval_evidence: dict | None = None) -> Path:
+                   approval_evidence: dict | None = None,
+                   pi_unsandboxed_write_authorized: bool = False) -> Path:
     manifest = {
         "manifest_version": "1.0",
         "run_id": run_id,
@@ -114,6 +115,7 @@ def write_manifest(run_dir: Path, run_id: str, goal: str,
         "approval_evidence": approval_evidence,
         "harness": harness,
         "acceptance_checks": checks,
+        "pi_unsandboxed_write_authorized": pi_unsandboxed_write_authorized,
         "stable": {
             "repository": str(ROOT),
             "branch": preflight_result["branch"],
@@ -223,13 +225,6 @@ def make_task(run_id: str, goal: str, harness: str,
         },
         "acceptance_checks": acceptance,
     }
-    if harness == "pi":
-        # Pi provides no OS sandbox; record the acknowledgement in the envelope.
-        task["harness_options"] = {"pi_unsandboxed_write": True}
-        task["constraints"].append(
-            "Pi has no OS-level sandbox: run only inside the isolated task worktree "
-            "and never use network, credentials, or external side effects."
-        )
     return task
 
 
@@ -295,10 +290,6 @@ def load_approved_task(task_file: Path, run_id: str, harness: str,
     )):
         raise ValueError("approved task cannot enable network, secrets, or external side effects")
     task["preferred_harness"] = harness
-    if harness == "pi" and not task.get("harness_options", {}).get("pi_unsandboxed_write"):
-        raise ValueError(
-            "approved Pi task must acknowledge harness_options.pi_unsandboxed_write=true"
-        )
     try:
         from jsonschema import Draft202012Validator
     except ImportError as exc:
@@ -337,17 +328,21 @@ def write_run_inputs(run_dir: Path, run_id: str, task: dict) -> tuple[Path, Path
 
 
 def invoke_candidate(candidate: Path, run_dir: Path,
-                     action: list[str] | None = None, resume: bool = False) -> int:
-    orchestrator = candidate / "scripts" / "agent-orchestrate.py"
+                     action: list[str] | None = None, resume: bool = False,
+                     allow_unsandboxed_pi_write: bool = False) -> int:
+    orchestrator = ROOT / "scripts" / "agent-orchestrate.py"
     plan = run_dir / "plan.json"
-    if not orchestrator.is_file() or not plan.is_file():
-        raise ValueError("candidate runtime or external evolution plan is missing")
+    if not candidate.is_dir() or not orchestrator.is_file() or not plan.is_file():
+        raise ValueError("candidate workspace, trusted orchestrator, or external evolution plan is missing")
     command = [
         sys.executable, str(orchestrator), "--plan", str(plan),
+        "--repo-root", str(candidate),
         "--runs-dir", str(run_dir / "orchestrator"), "--worktrees",
     ]
     if resume:
         command.append("--resume")
+    if allow_unsandboxed_pi_write:
+        command.append("--allow-unsandboxed-pi-write")
     if action:
         command.extend(action)
     return subprocess.run(command, cwd=candidate, check=False).returncode
@@ -378,6 +373,18 @@ def start(args: argparse.Namespace) -> int:
         task = make_task(run_id, goal, args.harness, checks)
         task_source = "manual-goal"
 
+    if args.harness == "pi":
+        if not args.allow_unsandboxed_pi_write:
+            raise ValueError(
+                "Pi Evolution writes are disabled by default because Pi has no OS-level sandbox. "
+                "Use --allow-unsandboxed-pi-write only after explicitly accepting this risk."
+            )
+        task["constraints"].append(
+            "This task requires explicitly approved unsandboxed Pi write access. "
+            "The authorization is supplied by the Evolution control plane, not this editable task file. "
+            "The Git Worktree is not a security boundary."
+        )
+
     environment = preflight(args.harness)
     candidate, branch, run_dir = candidate_paths(run_id)
     run_root = candidate.parent
@@ -395,6 +402,9 @@ def start(args: argparse.Namespace) -> int:
             run_dir, run_id, goal, args.harness, checks, environment,
             task_source=task_source, task_id=task["task_id"],
             approval_evidence=approval_evidence,
+            pi_unsandboxed_write_authorized=(
+                args.harness == "pi" and args.allow_unsandboxed_pi_write
+            ),
         )
     except Exception:
         # Keep partial state for diagnosis; never silently delete a worktree or evidence.
@@ -405,7 +415,12 @@ def start(args: argparse.Namespace) -> int:
     print(f"Evolution branch: {branch}")
     print(f"Stable base: {base}")
     print("Starting the candidate's own orchestrator with isolated task worktrees.")
-    return invoke_candidate(candidate, run_dir)
+    return invoke_candidate(
+        candidate, run_dir,
+        allow_unsandboxed_pi_write=(
+            args.harness == "pi" and args.allow_unsandboxed_pi_write
+        ),
+    )
 
 
 def continue_run(args: argparse.Namespace) -> int:
@@ -419,8 +434,21 @@ def continue_run(args: argparse.Namespace) -> int:
         print(json.dumps(json.loads(state_path.read_text(encoding="utf-8")),
                          ensure_ascii=False, indent=2))
         return 0
+    manifest_path = run_dir / "manifest.json"
+    if not manifest_path.is_file():
+        raise ValueError("Evolution manifest is missing; refusing to resume without its control-plane record.")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    pi_harness = manifest.get("harness") == "pi"
     if args.action == "resume":
-        return invoke_candidate(candidate, run_dir, resume=True)
+        if pi_harness and not args.allow_unsandboxed_pi_write:
+            raise ValueError(
+                "Pi resume requires a fresh human --allow-unsandboxed-pi-write opt-in; "
+                "the manifest is an audit record, not an authorization source."
+            )
+        return invoke_candidate(
+            candidate, run_dir, resume=True,
+            allow_unsandboxed_pi_write=pi_harness and args.allow_unsandboxed_pi_write,
+        )
     if args.action in {"approve", "integrate", "cancel"}:
         flag = {"approve": "--approve", "integrate": "--integrate", "cancel": "--cancel"}[args.action]
         return invoke_candidate(candidate, run_dir, action=[flag, args.id], resume=True)
@@ -437,6 +465,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     source_group.add_argument("--approved-task", type=Path,
                               help="execute a write-enabled artifact from agent-task-approve.py")
     start_parser.add_argument("--harness", choices=tuple(HARNESS_BINARIES), required=True)
+    start_parser.add_argument(
+        "--allow-unsandboxed-pi-write", action="store_true",
+        help="Unsafe: explicitly allow Pi to write without an OS sandbox.",
+    )
     start_parser.add_argument("--check", choices=CHECK_IDS, action="append",
                               help="override task acceptance checks with allowlisted IDs")
     doctor_parser = subparsers.add_parser("doctor", help="check local prerequisites without starting an Agent")
@@ -446,6 +478,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     action_parser = subparsers.add_parser("run", help="resume, inspect, approve, or integrate a candidate")
     action_parser.add_argument("--id", required=True)
     action_parser.add_argument("action", choices=("status", "resume", "approve", "integrate", "cancel"))
+    action_parser.add_argument(
+        "--allow-unsandboxed-pi-write", action="store_true",
+        help="Unsafe: freshly authorize Pi writes for this resume invocation.",
+    )
     args = parser.parse_args(argv)
     try:
         if args.command == "start":
