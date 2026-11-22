@@ -401,6 +401,9 @@ def start(args: argparse.Namespace) -> int:
             run_dir, run_id, goal, args.harness, checks, environment,
             task_source=task_source, task_id=task["task_id"],
             approval_evidence=approval_evidence,
+            pi_unsandboxed_write_authorized=(
+                args.harness == "pi" and args.allow_unsandboxed_pi_write
+            ),
         )
     except Exception:
         # Keep partial state for diagnosis; never silently delete a worktree or evidence.
