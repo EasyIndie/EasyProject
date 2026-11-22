@@ -328,7 +328,8 @@ def write_run_inputs(run_dir: Path, run_id: str, task: dict) -> tuple[Path, Path
 
 
 def invoke_candidate(candidate: Path, run_dir: Path,
-                     action: list[str] | None = None, resume: bool = False) -> int:
+                     action: list[str] | None = None, resume: bool = False,
+                     allow_unsandboxed_pi_write: bool = False) -> int:
     orchestrator = candidate / "scripts" / "agent-orchestrate.py"
     plan = run_dir / "plan.json"
     if not orchestrator.is_file() or not plan.is_file():
