@@ -340,6 +340,8 @@ def invoke_candidate(candidate: Path, run_dir: Path,
     ]
     if resume:
         command.append("--resume")
+    if allow_unsandboxed_pi_write:
+        command.append("--allow-unsandboxed-pi-write")
     if action:
         command.extend(action)
     return subprocess.run(command, cwd=candidate, check=False).returncode
