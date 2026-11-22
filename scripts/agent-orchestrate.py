@@ -258,43 +258,87 @@ def git_output(repo: Path, *args: str) -> str:
 
 
 def prepare_worktree(repo: Path, runs_dir: Path, task_id: str,
-                     record: dict[str, Any]) -> Path:
-    """Create or validate a detached worktree dedicated to one task."""
+                     record: dict[str, Any], independent_clone: bool = False) -> Path:
+    """Create or validate an isolated task workspace.
+
+    Sandbox-required tasks use a full independent clone so the container never
+    receives a Git worktree pointer or shared object/ref database.
+    """
+    mode = "independent-clone" if independent_clone else "linked-worktree"
     if record.get("worktree"):
         path = Path(record["worktree"]).resolve()
         if not path.is_dir():
             raise ValueError(task_id + ": recorded worktree is missing; inspect journal before recovery.")
+        if record.get("workspace_mode", "linked-worktree") != mode:
+            raise ValueError(task_id + ": recorded workspace mode differs from this run; recreate the task workspace deliberately.")
         top = Path(git_output(path, "rev-parse", "--show-toplevel")).resolve()
+        git_dir = Path(git_output(path, "rev-parse", "--absolute-git-dir")).resolve()
         common = Path(git_output(path, "rev-parse", "--git-common-dir"))
         if not common.is_absolute():
             common = (path / common).resolve()
         else:
             common = common.resolve()
-        expected_common = Path(git_output(repo, "rev-parse", "--git-common-dir"))
-        if not expected_common.is_absolute():
-            expected_common = (repo / expected_common).resolve()
+        if top != path:
+            raise ValueError(task_id + ": recorded workspace has an unexpected Git top-level.")
+        if independent_clone:
+            if git_dir != (path / ".git").resolve() or common != git_dir:
+                raise ValueError(task_id + ": sandbox workspace does not have independent Git metadata.")
+            if (git_dir / "commondir").exists() or (git_dir / "objects/info/alternates").exists():
+                raise ValueError(task_id + ": sandbox workspace references shared Git metadata.")
+            if git_output(path, "remote"):
+                raise ValueError(task_id + ": sandbox workspace must not retain host repository remotes.")
         else:
-            expected_common = expected_common.resolve()
-        if top != path or common != expected_common:
-            raise ValueError(task_id + ": recorded path is not a worktree of this repository.")
+            expected_common = Path(git_output(repo, "rev-parse", "--git-common-dir"))
+            if not expected_common.is_absolute():
+                expected_common = (repo / expected_common).resolve()
+            else:
+                expected_common = expected_common.resolve()
+            if common != expected_common:
+                raise ValueError(task_id + ": recorded path is not a worktree of this repository.")
         return path
 
     run_key = hashlib.sha256(str(runs_dir.resolve()).encode("utf-8")).hexdigest()[:12]
-    path = (repo.parent / ("." + repo.name + "-agent-worktrees") / run_key / task_id).resolve()
+    suffix = "-agent-sandboxes" if independent_clone else "-agent-worktrees"
+    path = (repo.parent / ("." + repo.name + suffix) / run_key / task_id).resolve()
     if path.exists():
-        raise ValueError(task_id + ": worktree path already exists but is not recorded: " + str(path))
+        raise ValueError(task_id + ": task workspace path already exists but is not recorded: " + str(path))
     path.parent.mkdir(parents=True, exist_ok=True)
     base_commit = git_output(repo, "rev-parse", "HEAD")
-    result = subprocess.run(
-        ["git", "worktree", "add", "--detach", str(path), base_commit],
-        cwd=repo, text=True, capture_output=True, check=False,
-    )
-    if result.returncode:
-        raise ValueError(task_id + ": cannot create worktree: " + result.stderr.strip())
+    if independent_clone:
+        branch = git_output(repo, "branch", "--show-current")
+        if not branch:
+            raise ValueError(task_id + ": independent sandbox clone requires a checked-out source branch.")
+        result = subprocess.run(
+            ["git", "clone", "--no-hardlinks", "--no-local", "--no-tags",
+             "--single-branch", "--branch", branch, "--no-checkout", str(repo), str(path)],
+            cwd=repo.parent, text=True, capture_output=True, check=False,
+        )
+        if result.returncode:
+            shutil.rmtree(path, ignore_errors=True)
+            raise ValueError(task_id + ": cannot create independent clone: " + result.stderr.strip())
+        try:
+            git_output(path, "checkout", "--detach", base_commit)
+            git_output(path, "remote", "remove", "origin")
+            git_output(path, "config", "user.name", "EasyProject Agent")
+            git_output(path, "config", "user.email", "agent@localhost.invalid")
+            git_output(path, "config", "core.hooksPath", os.devnull)
+            git_dir = (path / ".git").resolve()
+            if (git_dir / "commondir").exists() or (git_dir / "objects/info/alternates").exists():
+                raise ValueError("Independent clone unexpectedly contains shared Git metadata.")
+        except Exception:
+            shutil.rmtree(path, ignore_errors=True)
+            raise
+    else:
+        result = subprocess.run(
+            ["git", "worktree", "add", "--detach", str(path), base_commit],
+            cwd=repo, text=True, capture_output=True, check=False,
+        )
+        if result.returncode:
+            raise ValueError(task_id + ": cannot create worktree: " + result.stderr.strip())
     record["worktree"] = str(path)
     record["base_commit"] = base_commit
+    record["workspace_mode"] = mode
     return path
-
 
 def collect_change_evidence(repo: Path, base_commit: str, task_id: str,
                             runs_dir: Path, persist: bool = True,
@@ -527,7 +571,10 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             attempt = record["attempts"] + 1
             task_output = runs_dir / task_id / f"attempt-{attempt}.handoff.json"
             task_output.parent.mkdir(parents=True, exist_ok=True)
-            workspace = prepare_worktree(ROOT, runs_dir, task_id, record) if use_worktrees else ROOT
+            workspace = prepare_worktree(
+                ROOT, runs_dir, task_id, record,
+                independent_clone=bool(state.get("sandbox_required", False)),
+            ) if use_worktrees else ROOT
             cancel_file = runs_dir / task_id / f"cancel-attempt-{attempt}.request"
             task_envelope = json.loads(task_path.read_text(encoding="utf-8"))
             harness = item.get("harness", "codex")
@@ -798,6 +845,14 @@ def integrate_task(repo: Path, task_id: str, state: dict[str, Any],
     if git_output(repo, "rev-parse", "HEAD") != target_head:
         raise ValueError("Target branch moved during integration; inspect the repository and retry.")
     subject = f"Agent task {task_id}"
+    if record.get("workspace_mode") == "independent-clone":
+        fetched = git_result(repo, "fetch", "--no-tags", str(worktree), "HEAD")
+        if fetched.returncode:
+            raise ValueError("Cannot import approved commit from independent task clone: " + fetched.stderr.strip())
+        present = git_result(repo, "cat-file", "-e", agent_commit + "^{commit}")
+        if present.returncode:
+            raise ValueError("Approved commit was not imported from the independent task clone.")
+
     cherry_pick = git_result(repo, "cherry-pick", agent_commit)
     if cherry_pick.returncode:
         record.update(

@@ -319,6 +319,35 @@ class OrchestratorTests(unittest.TestCase):
                                  check=True, capture_output=True, text=True).stdout.strip()
             self.assertEqual(top, str(worktree))
 
+    def test_sandbox_workspace_uses_independent_clone_and_imports_commits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            root.mkdir()
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)
+            (root / "README.md").write_text("initial\\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "README.md"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "initial"], check=True)
+            record = {"worktree": None, "base_commit": None}
+            runs = Path(tmp) / "runs"
+            workspace = orchestrator.prepare_worktree(root, runs, "sandbox-task", record, independent_clone=True)
+            git_dir = workspace / ".git"
+            self.assertTrue(git_dir.is_dir())
+            self.assertFalse(git_dir.is_symlink())
+            self.assertFalse((git_dir / "commondir").exists())
+            self.assertFalse((git_dir / "objects/info/alternates").exists())
+            self.assertEqual(orchestrator.git_output(workspace, "rev-parse", "--git-common-dir"), ".git")
+            self.assertEqual(orchestrator.git_output(workspace, "remote"), "")
+            self.assertEqual(orchestrator.git_output(workspace, "config", "core.hooksPath"), os.devnull)
+            self.assertEqual(record["workspace_mode"], "independent-clone")
+            self.assertEqual(orchestrator.prepare_worktree(root, runs, "sandbox-task", record, independent_clone=True), workspace)
+            (workspace / "README.md").write_text("agent change\\n", encoding="utf-8")
+            orchestrator.git_output(workspace, "add", "README.md")
+            orchestrator.git_output(workspace, "commit", "-m", "agent change")
+            agent_commit = orchestrator.git_output(workspace, "rev-parse", "HEAD")
+            subprocess.run(["git", "fetch", "--no-tags", str(workspace), "HEAD"], cwd=root, check=True, capture_output=True, text=True)
+            subprocess.run(["git", "cat-file", "-e", agent_commit + "^{commit}"], cwd=root, check=True)
     def test_worktree_rejects_missing_recorded_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "repo"
