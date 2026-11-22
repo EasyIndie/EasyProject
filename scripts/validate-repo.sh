@@ -22,6 +22,10 @@ required_files=(
   "scripts/agent-run.py"
   "scripts/sandbox_runtime.py"
   "tests/test_sandbox_runtime.py"
+  "scripts/artifact_broker.py"
+  "tests/test_artifact_broker.py"
+  ".ai/runtime/schemas/artifact-manifest.schema.json"
+  ".ai/runtime/artifacts/README.md"
   ".ai/runtime/sandbox/LAUNCHER-CONTRACT.md"
   ".ai/runtime/examples/sandbox-profile.json"
   ".ai/runtime/schemas/sandbox-profile.schema.json"
@@ -61,6 +65,7 @@ for name in (
     "scripts/bootstrap.py", "tests/test_bootstrap.py",
     "scripts/agent-run.py", "tests/test_agent_runner.py",
     "scripts/sandbox_runtime.py", "tests/test_sandbox_runtime.py",
+    "scripts/artifact_broker.py", "tests/test_artifact_broker.py",
     "scripts/agent-orchestrate.py", "tests/test_agent_orchestrator.py",
     "scripts/evolution.py", "tests/test_evolution.py",
     "scripts/agent-benchmark.py", "tests/test_agent_benchmark.py",

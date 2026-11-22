@@ -42,3 +42,7 @@ See [the isolated self-evolution runtime guide](evolution/README.md) for running
 - `failed`: execution was attempted and did not produce an acceptable result.
 
 Do not use `completed` when checks were skipped or when the result relies on unverified assumptions.
+
+## Artifact exchange
+
+See [Immutable Artifact Broker](artifacts/README.md) for the standalone content-addressed export, verification and read-only reviewer snapshot CLI. Orchestrator and Integrator automation is not wired yet; Agents must not exchange files through shared writable directories.
