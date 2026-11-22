@@ -47,12 +47,13 @@ def profile() -> dict:
         "artifacts": {
             "export": ["diff"], "direct_workspace_sharing": False,
             "symlink_policy": "reject-escape"
-        }
+        },
+        "runtime": {"backend": "linux-rootless-oci", "image": "registry.example/agent@sha256:" + "a" * 64}
     }
 
 
 class FakeBackend:
-    backend_id = "test-backend"
+    backend_id = "linux-rootless-oci"
 
     def probe(self):
         return sandbox.SandboxCapabilities(
@@ -74,7 +75,7 @@ class LeakyBackend(FakeBackend):
 
 class SandboxRuntimeTests(unittest.TestCase):
     def test_doctor_fails_closed_when_no_backend_is_registered(self):
-        doctor = sandbox.SandboxManager().doctor()
+        doctor = sandbox.SandboxManager(backends=[]).doctor()
         self.assertFalse(doctor["enforcement_ready"])
         self.assertEqual(doctor["fallback"], "forbidden")
         self.assertEqual(doctor["backends"][0]["status"], "not-implemented")
@@ -114,7 +115,7 @@ class SandboxRuntimeTests(unittest.TestCase):
             profile_path = Path(tmp) / "profile.json"
             profile_path.write_text(json.dumps(profile()), encoding="utf-8")
             with self.assertRaises(sandbox.SandboxBackendUnavailable):
-                sandbox.SandboxManager().build_command(
+                sandbox.SandboxManager(backends=[]).build_command(
                     ["pi"], profile_path, "task-1", Path(tmp), Path(tmp) / "runtime",
                     {"repository_read": True, "repository_write": True,
                      "network_access": False, "secret_access": False}
@@ -159,7 +160,7 @@ class SandboxRuntimeTests(unittest.TestCase):
             self.assertEqual(command, ["sandbox-test-wrapper", "claude", "-p"])
             self.assertEqual(environment, {"PATH": "/sandbox/bin", "HOME": "/sandbox/home"})
             self.assertEqual(evidence["status"], "enforced")
-            self.assertEqual(evidence["backend"], "test-backend")
+            self.assertEqual(evidence["backend"], "linux-rootless-oci")
             self.assertEqual(len(evidence["profile_sha256"]), 64)
 
 

@@ -57,10 +57,11 @@ class AgentRunnerTests(unittest.TestCase):
                 "artifacts": {
                     "export": ["diff"], "direct_workspace_sharing": False,
                     "symlink_policy": "reject-escape"
-                }
+                },
+                "runtime": {"backend": "linux-rootless-oci", "image": "registry.example/agent@sha256:" + "a" * 64}
             }), encoding="utf-8")
             with self.assertRaises(sandbox_runtime.SandboxBackendUnavailable):
-                sandbox_runtime.SandboxManager().build_command(
+                sandbox_runtime.SandboxManager(backends=[]).build_command(
                     ["pi", "--print"], profile_path, "task-1",
                     Path(tmp), Path(tmp) / "runtime",
                     {"repository_read": True, "repository_write": True,

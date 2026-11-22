@@ -10,7 +10,7 @@ Introduce OS-enforced, task-scoped isolation so multiple cooperating Agents cann
 - `scripts/agent-run.py` is a process dispatcher, not a sandbox.
 - Codex has an OS-enforced sandbox mode; Claude Code's Bash sandbox does not cover all built-in tools and helpers.
 - Pi's tool allowlist is not a security boundary. The current Evolution path automatically adds `harness_options.pi_unsandboxed_write=true`, which is not genuine human opt-in and must be removed in M4.1.
-- The repository has task orchestration, approval artifacts, cancellation and review evidence, but no OS-enforced universal backend or artifact broker.
+- The repository has task orchestration, approval artifacts, cancellation and review evidence. The Linux Rootless Podman launcher is now implemented behind a fail-closed capability probe; kernel-level conformance is still pending.
 
 ## Work breakdown
 
@@ -22,7 +22,10 @@ Introduce OS-enforced, task-scoped isolation so multiple cooperating Agents cann
 | M4.2b | Backend decision | Accepted platform ADR; Linux Rootless Podman selected for full profile; shared Git metadata and credential-broker dependencies documented |
 | M4.3a | Artifact Broker core | Content-addressed export, manifest/hash verification, read-only reviewer materialization, path/symlink/type/size validation |
 | M4.3b | Artifact Broker integration | Sandbox-required Orchestrator exports immutable review artifacts after Agent and checks exit; approval and Integrator verify task/base/fingerprint binding |
-| M4.4 | Linux Rootless OCI backend | Rootless Podman, cgroup-v2 delegated limits, namespaces, seccomp/LSM, network deny, private Git metadata, conformance suite |
+| M4.4.1 | Rootless Podman capability probe | Verify rootless mode, subordinate UID/GID mappings, cgroup v2, systemd delegation and cpu/memory/pids controllers |
+| M4.4.2 | Rootless OCI launcher | Pinned image, network none, namespaces, read-only rootfs, workspace-only mount, limits, sanitized Agent environment |
+| M4.4.3 | Git metadata isolation | Reject shared worktree pointer metadata; move toward independent task clones or patch-only Agent workspaces |
+| M4.4.4 | Linux conformance suite | Prove filesystem, network, process-tree and effective resource enforcement on a dedicated Linux worker |
 | M4.5 | Strong isolation backends | gVisor/Kata/Firecracker plugin interface and documented deployment profiles |
 | M4.6 | Brokers and audit | Scoped credential/network broker, policy hash, denial evidence, operational guide |
 
@@ -32,7 +35,7 @@ The platform selection and prerequisites are recorded in [ADR-001: Production Sa
 
 ## Execution order
 
-M4.0 is documentation and schema only. M4.1 is merged. M4.2a defines the backend interface and fail-closed launch path, but does not provide OS enforcement. M4.2b adds a real host backend and must not be marked complete until process-tree tests prove that file tools, shell tools, MCP/hooks and descendants share the boundary. M4.3 can be developed independently after the immutable artifact contract is agreed. Linux backend work follows the broker and policy interfaces.
+M4.0 is documentation and schema only. M4.1 is merged. M4.2a defines the backend interface and fail-closed launch path, but does not provide OS enforcement. M4.2b records the platform decision. M4.3a/b artifact exchange is complete. M4.4.1/4.4.2 now provide a conservative Rootless Podman probe and launcher, but M4.4 remains incomplete until independent Git metadata handling and dedicated Linux kernel-conformance tests pass. The backend deliberately does not support network egress or credential brokering; those remain M4.6 work.
 
 ## Explicit non-goals
 

@@ -2,38 +2,23 @@
 
 ## Status
 
-This change adds the backend interface, policy validation, capability reporting and fail-closed integration point. **It does not ship a production OS-enforcement backend.** On all hosts, `doctor` must currently report `enforcement_ready: false`. This is expected and must not be worked around by treating a Worktree, Agent permission mode, or tool allowlist as isolation.
+The repository now includes a Linux Rootless Podman backend and a conservative capability probe. A host is enforcement-ready only when rootless mode, subordinate UID/GID mappings, cgroup v2, systemd delegation, and cpu/memory/pids controllers are verified. Other platforms remain unavailable. Unit tests do not prove kernel enforcement; dedicated Linux conformance tests are still required. A Worktree, Agent permission mode, or tool allowlist is not isolation.
 
 ## Execution invariant
 
 The launcher receives the complete harness argv and starts the harness as its child inside one boundary. All descendants—including shell commands, built-in file tools, MCP servers, hooks, language servers and extensions—must remain subject to that boundary. A backend that only wraps Bash is insufficient.
 
-A backend is eligible only if it can enforce all of the following for the requested profile:
+A backend is eligible only if it can enforce workspace-only filesystem access, default-deny network, process-tree inheritance and termination, CPU/memory/PID/wall-clock limits, no privilege escalation, no host runtime socket, and a sanitized launcher environment. Egress proxy and scoped-secret broker capabilities are mandatory when requested by the profile. Failure during setup aborts before the Agent starts.
 
-- workspace-only filesystem access, including denial of stable checkout, other task workspaces, shared Git common metadata/object/ref stores, user home, credentials and control-plane runtime;
-- default-deny network, no host/LAN access, and explicit egress proxy policy;
-- process-tree inheritance and reliable termination, including killing every descendant before the launcher reports task completion;
-- CPU, memory, process-count and wall-clock limits;
-- no privilege escalation and no host container-runtime socket;
-- effective-policy evidence (backend/version, profile digest and platform);
-- sanitized launcher environment: never inherit the host environment wholesale;
-- egress proxy and scoped-secret broker capabilities when the profile requests them;
-- profile wall-clock timeout must cap the Runner timeout.
+## Linux Rootless Podman
 
-The manager rejects partial backends. A backend must not claim support based on a binary being installed; `probe()` must verify prerequisites needed to enforce the actual policy. Failure during setup aborts before the Agent starts.
+The implementation is in `scripts/sandbox_backends/podman_rootless.py`. It requires rootless Podman, subordinate UID/GID mappings, cgroup v2, systemd cgroup manager and delegated cpu/memory/pids controllers. It uses a digest-pinned image already present locally (`--pull=never`), private namespaces, `--network=none`, read-only rootfs, dropped capabilities, no-new-privileges, a single task workspace mount, private tmpfs and explicit resource limits.
 
-## Python interface
+Worktree `.git` pointer files are rejected because they refer to shared Git metadata outside the task. Use an independent clone or a patch-only workflow. The backend does not implement egress proxy or credential brokering; requests requiring either are rejected by backend selection.
 
-Implemented in `scripts/sandbox_runtime.py`:
+## Verification boundary
 
-- `SandboxBackend.probe() -> SandboxCapabilities` (must prove both process-tree inheritance and descendant cleanup on task exit)
-- `SandboxBackend.build_command(command, spec) -> argv`
-- `SandboxBackend.build_environment(spec) -> minimal env`
-- `SandboxManager.doctor()`
-- `SandboxManager.build_command(...)`
-- `load_profile(path)`
-
-Backends are injected into the manager by trusted application code. A backend must provide both a wrapped argv and a minimal environment; returning `os.environ.copy()` or forwarding host credential variables violates the contract. Task JSON and Agent-controlled configuration cannot register a backend, choose an arbitrary launcher executable, or relax a profile. Task permissions are intersected with the trusted maximum profile: they may narrow workspace read/write, network and brokered-secret access, but cannot expand any of them.
+Unit tests prove policy selection, argv construction and fail-closed behavior only. They do not prove namespaces, seccomp, filesystem isolation, network isolation or effective cgroup enforcement. M4.4.4 requires a dedicated Linux worker conformance suite. Do not describe the backend as production-ready until that suite passes.
 
 ## CLI
 
@@ -43,19 +28,4 @@ python3 scripts/sandbox_runtime.py validate-profile --profile .ai/runtime/exampl
 python3 scripts/agent-orchestrate.py --plan .ai/runtime/examples/plan.json --worktrees --require-sandbox
 ```
 
-Exit code 3 from `doctor` means no production backend can enforce the complete policy. This is a fail-closed status, not a runtime failure to be ignored.
-
-## Agent Runner
-
-`agent-orchestrate.py --require-sandbox --worktrees` is the trusted control-plane switch; sandbox-required runs refuse a shared stable checkout. The Orchestrator pins the profile path and digest in the external run journal and passes the requirement to every Runner invocation. A resume must preserve the requirement and exact profile digest. Direct `agent-run.py --require-sandbox --sandbox-profile <file>` requests mandatory enforcement. If no complete backend is registered, it exits before spawning Pi, Codex or Claude Code. Without `--require-sandbox`, legacy local execution remains explicitly unsandboxed and is not to be described as secure or isolated. New unattended or untrusted execution flows must pass `--require-sandbox`.
-
-## Backend implementation sequence
-
-1. macOS Seatbelt: launch the entire harness process tree, explicit file rules, deny network by default, verify effective policy. Do not rely on Codex's internal command sandbox as a wrapper around Claude/Pi.
-2. Linux Rootless OCI: user/mount/PID/network namespaces, read-only root, no-new-privileges, seccomp, LSM, cgroup limits, no Docker socket.
-3. Windows: AppContainer or dedicated VM/WSL2 worker; verify each harness's support and process inheritance.
-4. Stronger remote backend: gVisor/Kata/Firecracker for hostile multi-tenant workloads.
-
-## Verification boundary
-
-Unit tests for this contract use a fake backend and prove selection, sanitized-environment handoff and fail-closed behavior only. They do not prove Seatbelt, namespaces, seccomp, filesystem isolation, network isolation or kernel enforcement. Those claims require backend-specific conformance tests on the supported host OS.
+Exit code 3 from `doctor` means no backend can enforce the complete policy. This is fail-closed status, not a runtime failure to ignore.
