@@ -50,7 +50,9 @@ def build_prompt(task: dict) -> str:
     )
 
 
-def build_command(harness: str, task: dict, prompt: str, *, allow_unsandboxed_pi_write: bool = False) -> list[str]:
+def build_command(harness: str, task: dict, prompt: str, *,
+                  allow_unsandboxed_pi_write: bool = False,
+                  sandbox_requested: bool = False) -> list[str]:
     permissions = task["permissions"]
     if permissions["secret_access"]:
         raise ValueError("secret_access=true is unsupported: adapters never grant agent access to secrets.")
@@ -63,7 +65,7 @@ def build_command(harness: str, task: dict, prompt: str, *, allow_unsandboxed_pi
         # Pi's --tools allowlist is a capability restriction, not an OS sandbox.
         # Write access requires an explicit CLI override; a task envelope alone
         # cannot authorize this unsafe host-access mode.
-        if permissions["repository_write"] and not allow_unsandboxed_pi_write:
+        if permissions["repository_write"] and not allow_unsandboxed_pi_write and not sandbox_requested:
             raise ValueError(
                 "Pi has no OS-level sandbox. Write access is disabled by default; "
                 "pass --allow-unsandboxed-pi-write only after explicitly accepting the host-access risk."
@@ -198,6 +200,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         command = build_command(
             args.harness, task, prompt,
             allow_unsandboxed_pi_write=args.allow_unsandboxed_pi_write,
+            sandbox_requested=args.require_sandbox,
         )
         workspace = resolve_workspace(args.cwd)
         if args.require_sandbox and not args.sandbox_profile:
