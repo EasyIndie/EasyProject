@@ -72,6 +72,9 @@ class SandboxBackend(Protocol):
     ) -> list[str]:
         """Return a launcher argv that enforces every requested profile property."""
 
+    def build_environment(self, spec: SandboxLaunchSpec) -> dict[str, str]:
+        """Return a minimal launcher environment with no inherited host secrets."""
+
 
 def load_profile(path: Path) -> tuple[dict, str]:
     try:
@@ -167,7 +170,8 @@ class SandboxManager:
         candidates = []
         for backend in self._backends.values():
             caps = backend.probe()
-            if (caps.available and caps.enforces_filesystem and caps.enforces_network
+            if (caps.platform == current and caps.available
+                    and caps.enforces_filesystem and caps.enforces_network
                     and caps.isolates_process_tree and caps.enforces_resource_limits):
                 candidates.append(backend)
         if not candidates:
@@ -178,19 +182,24 @@ class SandboxManager:
         backend = candidates[0]
         try:
             wrapped = backend.build_command(command, spec)
+            environment = backend.build_environment(spec)
         except Exception as exc:
             raise SandboxEnforcementError(
                 f"Backend {backend.backend_id} failed to construct an enforced launch: {exc}"
             ) from exc
         if not wrapped:
             raise SandboxEnforcementError("Backend returned an empty launcher command.")
+        if not isinstance(environment, dict) or any(not isinstance(k, str) or not isinstance(v, str)
+                                                     for k, v in environment.items()):
+            raise SandboxEnforcementError("Backend returned an invalid or inherited launcher environment.")
         evidence = {
             "status": "enforced",
             "backend": backend.backend_id,
             "profile_sha256": digest,
             "platform": current,
+            "timeout_seconds": timeout_seconds,
         }
-        return wrapped, evidence
+        return wrapped, environment, evidence
 
 
 def main(argv: Sequence[str] | None = None) -> int:
