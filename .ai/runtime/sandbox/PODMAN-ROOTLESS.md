@@ -14,7 +14,7 @@ The trusted Podman client receives only the environment required for its rootles
 
 ## Git metadata isolation
 
-When Orchestrator runs with both --require-sandbox and --worktrees, it creates a full independent clone with git clone --no-hardlinks --no-local, restricted to the current source branch. It removes the clone's origin remote, assigns a non-personal local commit identity, and verifies that .git is a private directory without commondir or object alternates. The Agent container mounts only this clone.
+When Orchestrator runs with both --require-sandbox and --worktrees, it creates a full independent clone with git clone --no-hardlinks --no-local, restricted to the current source branch. It removes the clone's origin remote, assigns a non-personal local commit identity, and verifies that .git is a private directory without commondir or object alternates. The container mounts the working tree read/write but mounts .git separately read-only. Git optional index writes and global/system Git configuration are disabled inside the Agent. Agents can inspect history and diff changes, but cannot write refs, the index, hooks or config; the trusted Integrator creates the final commit after review.
 
 Legacy non-sandboxed task runs continue using linked Git Worktrees. Sandbox-required runs persist workspace_mode=independent-clone in the external journal and reject resumes with a mismatched workspace mode. During integration, the trusted Orchestrator fetches the approved commit from the clone into the stable repository before cherry-picking it. The clone is never allowed to write the stable repository's refs or object store.
 
