@@ -670,6 +670,9 @@ def main() -> int:
         help="Unsafe: explicitly authorize Pi write tasks without an OS sandbox.",
     )
     args = parser.parse_args()
+    global ROOT
+    if args.repo_root:
+        ROOT = args.repo_root.resolve()
     try:
         plan = load_plan(args.plan)
         runs_dir = args.runs_dir if args.runs_dir.is_absolute() else ROOT / args.runs_dir
