@@ -450,16 +450,17 @@ def verify_review_artifact(record: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Review artifact manifest does not match the task journal.")
     artifact_evidence = json.loads((artifact_dir / "review-evidence.json").read_text(encoding="utf-8"))
     evidence_path = record.get("review_evidence")
-    if not evidence_path or not Path(evidence_path).is_file():
-        raise ValueError("Original review evidence is missing.")
+    if not evidence_path or Path(evidence_path).is_symlink() or not Path(evidence_path).is_file():
+        raise ValueError("Original review evidence is missing or unsafe.")
     original = json.loads(Path(evidence_path).read_text(encoding="utf-8"))
     sandbox = artifact_evidence.get("sandbox", {})
     if (sandbox.get("status") != "enforced" or not sandbox.get("backend")
             or not re.fullmatch(r"[0-9a-f]{64}", str(sandbox.get("profile_sha256", "")))):
         raise ValueError("Review artifact is missing verified sandbox provenance.")
-    if (artifact_evidence.get("task_id") != record.get("task_id")
-            or artifact_evidence.get("fingerprint") != original.get("fingerprint")
-            or artifact_evidence.get("base_commit") != original.get("base_commit")
+    comparable_fields = ("task_id", "fingerprint", "base_commit", "changed_files", "diff_stat", "diff_check")
+    if (any(artifact_evidence.get(field) != original.get(field) for field in comparable_fields)
+            or artifact_evidence.get("acceptance", {}).get("automated_checks", {}).get("status")
+               != original.get("acceptance", {}).get("automated_checks", {}).get("status")
             or manifest.get("source_revision") != original.get("base_commit")):
         raise ValueError("Immutable review artifact is not bound to the current task evidence.")
     return manifest
