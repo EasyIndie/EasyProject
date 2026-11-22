@@ -342,6 +342,11 @@ def materialize_artifact(artifact_dir: Path, destination: Path) -> dict:
             relative = normalize_relative_path(item["path"])
             content = _regular_file_bytes(artifact_dir, relative)
             _write_new_file(destination.joinpath(*relative.parts), content, 0o444)
+        _write_new_file(
+            destination / "artifact.json",
+            json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2).encode("utf-8") + b"\\n",
+            0o444,
+        )
         _make_read_only(destination)
     except Exception:
         try:
