@@ -168,6 +168,7 @@ class RootlessPodmanBackend:
             # Keep it writable so the Agent can create the commit consumed by Integrator.
             # The entire clone remains inside this task sandbox and cannot reach stable refs.
             "--mount", f"type=bind,src={workspace},dst=/workspace,{mode}",
+            "--mount", f"type=bind,src={git},dst=/workspace/.git,ro",
             "--workdir=/workspace",
             "--env=PATH=/usr/local/bin:/usr/bin:/bin",
             "--env=HOME=/home/sandbox", "--env=TMPDIR=/tmp",
