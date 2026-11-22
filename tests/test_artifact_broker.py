@@ -143,6 +143,18 @@ class ArtifactBrokerTests(unittest.TestCase):
             with self.assertRaises(broker.ArtifactError):
                 broker.verify_artifact(artifact_dir)
 
+    def test_artifact_directory_symlink_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.addCleanup(self.make_writable, root)
+            workspace = self.make_workspace(root)
+            result = broker.export_artifact(workspace, root / "store", "task-01", "diff", ["report.json"])
+            artifact_dir = Path(result["artifact_dir"])
+            alias = root / "artifact-alias"
+            alias.symlink_to(artifact_dir, target_is_directory=True)
+            with self.assertRaises(broker.ArtifactError):
+                broker.verify_artifact(alias)
+
     def test_existing_materialization_destination_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
