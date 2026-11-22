@@ -426,6 +426,7 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                 harness == "pi"
                 and task_envelope.get("permissions", {}).get("repository_write") is True
                 and not allow_unsandboxed_pi_write
+                and not require_sandbox
             ):
                 raise ValueError(
                     f"{task_id}: Pi write requires the orchestrator's explicit "
