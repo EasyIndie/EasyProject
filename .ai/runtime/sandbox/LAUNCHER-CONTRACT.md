@@ -15,7 +15,9 @@ A backend is eligible only if it can enforce all of the following for the reques
 - process-tree inheritance and reliable termination;
 - CPU, memory, process-count and wall-clock limits;
 - no privilege escalation and no host container-runtime socket;
-- effective-policy evidence (backend/version, profile digest and platform).
+- effective-policy evidence (backend/version, profile digest and platform);
+- sanitized launcher environment: never inherit the host environment wholesale;
+- profile wall-clock timeout must cap the Runner timeout.
 
 The manager rejects partial backends. A backend must not claim support based on a binary being installed; `probe()` must verify prerequisites needed to enforce the actual policy. Failure during setup aborts before the Agent starts.
 
@@ -25,11 +27,12 @@ Implemented in `scripts/sandbox_runtime.py`:
 
 - `SandboxBackend.probe() -> SandboxCapabilities`
 - `SandboxBackend.build_command(command, spec) -> argv`
+- `SandboxBackend.build_environment(spec) -> minimal env`
 - `SandboxManager.doctor()`
 - `SandboxManager.build_command(...)`
 - `load_profile(path)`
 
-Backends are injected into the manager by trusted application code. Task JSON and Agent-controlled configuration cannot register a backend, choose an arbitrary launcher executable, or relax a profile.
+Backends are injected into the manager by trusted application code. A backend must provide both a wrapped argv and a minimal environment; returning `os.environ.copy()` or forwarding host credential variables violates the contract. Task JSON and Agent-controlled configuration cannot register a backend, choose an arbitrary launcher executable, or relax a profile.
 
 ## CLI
 
@@ -53,4 +56,4 @@ Exit code 3 from `doctor` means no production backend can enforce the complete p
 
 ## Verification boundary
 
-Unit tests for this contract use a fake backend and prove selection/fail-closed behavior only. They do not prove Seatbelt, namespaces, seccomp, filesystem isolation, network isolation or kernel enforcement. Those claims require backend-specific conformance tests on the supported host OS.
+Unit tests for this contract use a fake backend and prove selection, sanitized-environment handoff and fail-closed behavior only. They do not prove Seatbelt, namespaces, seccomp, filesystem isolation, network isolation or kernel enforcement. Those claims require backend-specific conformance tests on the supported host OS.
