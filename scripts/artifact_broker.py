@@ -28,6 +28,9 @@ MAX_TOTAL_BYTES = 50 * 1024 * 1024
 BLOCKED_NAMES = {
     ".ssh", ".aws", ".azure", ".kube", ".docker", ".netrc", ".npmrc",
     ".pypirc", "credentials", "credential", "secrets", "secret",
+    "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa", "authorized_keys",
+    "credentials.json", "service-account.json", "google-credentials.json",
+    "token.json", "access_token", "refresh_token", "oauth.json",
 }
 BLOCKED_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".jks", ".keystore"}
 
@@ -55,6 +58,8 @@ def normalize_relative_path(value: str) -> PurePosixPath:
     if any(part in ("", ".", "..") for part in raw_parts):
         raise ArtifactError(f"Empty, dot, and parent path components are forbidden: {value!r}")
     path = PurePosixPath(value)
+    if path.as_posix() == "artifact.json":
+        raise ArtifactError("artifact.json is reserved for the broker manifest.")
     if path.is_absolute():
         raise ArtifactError(f"Absolute artifact path is forbidden: {value!r}")
     for part in path.parts:
@@ -119,6 +124,23 @@ def _write_new_file(path: Path, content: bytes, mode: int = 0o444) -> None:
         stream.flush()
         os.fsync(stream.fileno())
     os.chmod(path, mode)
+
+
+def _remove_tree(path: Path) -> None:
+    if not path.exists():
+        return
+    for current, directories, files in os.walk(path, topdown=False, followlinks=False):
+        current_path = Path(current)
+        for name in files:
+            child = current_path / name
+            if not child.is_symlink():
+                os.chmod(child, 0o600)
+        for name in directories:
+            child = current_path / name
+            if not child.is_symlink():
+                os.chmod(child, 0o700)
+        os.chmod(current_path, 0o700)
+    shutil.rmtree(path, ignore_errors=False)
 
 
 def _make_read_only(root: Path) -> None:
@@ -188,7 +210,8 @@ def export_artifact(
         "files": files,
         "total_bytes": total_bytes,
     }
-    digest = hashlib.sha256(canonical_json(manifest)).hexdigest()
+    identity = {key: value for key, value in manifest.items() if key != "created_at"}
+    digest = hashlib.sha256(canonical_json(identity)).hexdigest()
     manifest["artifact_id"] = f"sha256:{digest}"
     try:
         from jsonschema import Draft202012Validator, FormatChecker
@@ -209,20 +232,14 @@ def export_artifact(
         _make_read_only(staging)
         destination = store / f"sha256-{digest}"
         if destination.exists():
-            verify_artifact(destination)
-            shutil.rmtree(staging, ignore_errors=True)
-        else:
-            os.replace(staging, destination)
+            existing_manifest = verify_artifact(destination)
+            _remove_tree(staging)
+            return {"artifact_dir": str(destination), "manifest": existing_manifest}
+        os.replace(staging, destination)
         return {"artifact_dir": str(destination), "manifest": manifest}
     except Exception:
         try:
-            for current, directories, files in os.walk(staging, topdown=False):
-                os.chmod(current, 0o700)
-                for name in files:
-                    os.chmod(Path(current) / name, 0o600)
-                for name in directories:
-                    os.chmod(Path(current) / name, 0o700)
-            shutil.rmtree(staging, ignore_errors=True)
+            _remove_tree(staging)
         except OSError:
             pass
         raise
@@ -249,10 +266,13 @@ def _read_manifest(artifact_dir: Path) -> dict:
 
 
 def verify_artifact(artifact_dir: Path) -> dict:
+    if artifact_dir.is_symlink():
+        raise ArtifactError("Artifact directory must not be a symlink.")
     artifact_dir = artifact_dir.resolve()
     manifest = _read_manifest(artifact_dir)
     artifact_id = manifest["artifact_id"]
-    payload = {key: value for key, value in manifest.items() if key != "artifact_id"}
+    payload = {key: value for key, value in manifest.items()
+               if key not in {"artifact_id", "created_at"}}
     digest = hashlib.sha256(canonical_json(payload)).hexdigest()
     if artifact_id != f"sha256:{digest}" or artifact_dir.name != f"sha256-{digest}":
         raise ArtifactError("Artifact ID does not match the canonical manifest digest.")
@@ -288,6 +308,10 @@ def materialize_artifact(artifact_dir: Path, destination: Path) -> dict:
     manifest = verify_artifact(artifact_dir)
     if destination.exists() or destination.is_symlink():
         raise ArtifactError("Materialization destination must not already exist.")
+    artifact_root = artifact_dir.resolve()
+    destination_parent = destination.parent.resolve()
+    if destination_parent == artifact_root or destination_parent.is_relative_to(artifact_root):
+        raise ArtifactError("Reviewer snapshot cannot be created inside the immutable artifact store entry.")
     if not destination.parent.is_dir() or destination.parent.is_symlink():
         raise ArtifactError("Materialization parent must be an existing, non-symlink directory.")
     destination.mkdir(mode=0o700)
@@ -299,13 +323,7 @@ def materialize_artifact(artifact_dir: Path, destination: Path) -> dict:
         _make_read_only(destination)
     except Exception:
         try:
-            for current, directories, files in os.walk(destination, topdown=False):
-                os.chmod(current, 0o700)
-                for name in files:
-                    os.chmod(Path(current) / name, 0o600)
-                for name in directories:
-                    os.chmod(Path(current) / name, 0o700)
-            shutil.rmtree(destination, ignore_errors=True)
+            _remove_tree(destination)
         except OSError:
             pass
         raise
