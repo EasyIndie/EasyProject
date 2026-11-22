@@ -138,7 +138,7 @@ def run_acceptance_checks(check_ids: list[str], workspace: Path,
             if termination == "cancelled":
                 result = "cancelled"
             elif termination == "timeout":
-                stderr += f"\\nTimed out after {ACCEPTANCE_CHECK_TIMEOUT_SECONDS} seconds."
+                stderr += f"\\nTimed out after {check_timeout} seconds."
                 result = "timeout"
             else:
                 result = "passed" if exit_code == 0 else "failed"
@@ -153,6 +153,7 @@ def run_acceptance_checks(check_ids: list[str], workspace: Path,
             "stderr_path": str(stderr_path),
             "sandbox_status": sandbox_evidence["status"] if sandbox_evidence else "not-requested",
             "sandbox_backend": sandbox_evidence.get("backend") if sandbox_evidence else None,
+            "sandbox_profile_sha256": sandbox_evidence.get("profile_sha256") if sandbox_evidence else None,
         })
         if result == "cancelled":
             return {"status": "cancelled", "results": results}
@@ -543,7 +544,14 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             if result.returncode == 0 and require_sandbox:
                 try:
                     handoff = json.loads(task_output.read_text(encoding="utf-8"))
-                    sandbox_enforced = handoff.get("artifacts", {}).get("sandbox_status") == "enforced"
+                    sandbox_artifacts = handoff.get("artifacts", {})
+                    sandbox_enforced = (
+                        sandbox_artifacts.get("sandbox_status") == "enforced"
+                        and isinstance(sandbox_artifacts.get("sandbox_backend"), str)
+                        and bool(sandbox_artifacts.get("sandbox_backend"))
+                        and isinstance(sandbox_artifacts.get("sandbox_profile_sha256"), str)
+                        and len(sandbox_artifacts["sandbox_profile_sha256"]) == 64
+                    )
                 except (OSError, json.JSONDecodeError) as exc:
                     sandbox_error = f"Required sandbox handoff evidence is missing or invalid: {exc}"
                 if not sandbox_enforced and sandbox_error is None:
@@ -609,7 +617,8 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             progress = True
             # Stop after one actual agent invocation: review/approval is a gate.
             print(f"{task_id}: {record['status']} (exit={result.returncode}, checks={automated_checks['status']}, attempt={attempt})")
-            return 1 if result.returncode or automated_checks["status"] not in {"passed", "not_configured"} else 0
+            return 1 if (result.returncode or sandbox_error or artifact_error
+                         or automated_checks["status"] not in {"passed", "not_configured"}) else 0
     save_state(state_path, state)
     return 0
 
