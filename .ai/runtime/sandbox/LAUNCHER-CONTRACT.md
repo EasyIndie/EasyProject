@@ -10,7 +10,7 @@ The launcher receives the complete harness argv and starts the harness as its ch
 
 A backend is eligible only if it can enforce all of the following for the requested profile:
 
-- workspace-only filesystem access, including denial of stable checkout, other task workspaces, user home, credentials and control-plane runtime;
+- workspace-only filesystem access, including denial of stable checkout, other task workspaces, shared Git common metadata/object/ref stores, user home, credentials and control-plane runtime;
 - default-deny network, no host/LAN access, and explicit egress proxy policy;
 - process-tree inheritance and reliable termination;
 - CPU, memory, process-count and wall-clock limits;
