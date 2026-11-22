@@ -211,7 +211,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 command, args.sandbox_profile, task["task_id"], workspace,
                 args.sandbox_runtime_dir,
             )
-    except (ValueError, OSError, KeyError) as exc:
+    except (ValueError, OSError, KeyError, RuntimeError) as exc:
         print(f"agent-run: {exc}", file=sys.stderr)
         return 2
 
