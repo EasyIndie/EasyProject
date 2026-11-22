@@ -33,7 +33,7 @@ Implemented in `scripts/sandbox_runtime.py`:
 - `SandboxManager.build_command(...)`
 - `load_profile(path)`
 
-Backends are injected into the manager by trusted application code. A backend must provide both a wrapped argv and a minimal environment; returning `os.environ.copy()` or forwarding host credential variables violates the contract. Task JSON and Agent-controlled configuration cannot register a backend, choose an arbitrary launcher executable, or relax a profile.
+Backends are injected into the manager by trusted application code. A backend must provide both a wrapped argv and a minimal environment; returning `os.environ.copy()` or forwarding host credential variables violates the contract. Task JSON and Agent-controlled configuration cannot register a backend, choose an arbitrary launcher executable, or relax a profile. Task permissions are intersected with the trusted maximum profile: they may narrow workspace read/write, network and brokered-secret access, but cannot expand any of them.
 
 ## CLI
 
