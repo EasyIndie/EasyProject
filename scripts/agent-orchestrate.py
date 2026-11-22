@@ -701,6 +701,8 @@ def main() -> int:
         if args.sandbox_profile and not args.require_sandbox:
             raise ValueError("--sandbox-profile requires --require-sandbox.")
         if args.require_sandbox:
+            if not args.worktrees:
+                raise ValueError("--require-sandbox requires --worktrees so the task workspace is not the stable checkout.")
             sandbox_profile = (
                 args.sandbox_profile.resolve() if args.sandbox_profile
                 else CODE_ROOT / ".ai/runtime/examples/sandbox-profile.json"
