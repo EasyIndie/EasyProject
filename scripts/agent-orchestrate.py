@@ -383,9 +383,15 @@ def verify_change_evidence(repo: Path, record: dict[str, Any]) -> None:
 
 
 def publish_review_artifact(evidence: dict[str, Any], runs_dir: Path,
-                           task_id: str, attempt: int) -> dict[str, Any]:
+                           task_id: str, attempt: int,
+                           sandbox_evidence: dict[str, Any] | None = None) -> dict[str, Any]:
     """Publish a portable immutable review snapshot after a sandboxed task has stopped."""
     from artifact_broker import export_artifact
+    if (not isinstance(sandbox_evidence, dict)
+            or sandbox_evidence.get("sandbox_status") != "enforced"
+            or not sandbox_evidence.get("sandbox_backend")
+            or not re.fullmatch(r"[0-9a-f]{64}", str(sandbox_evidence.get("sandbox_profile_sha256", "")))):
+        raise ValueError("Review artifact publication requires verified sandbox backend and profile evidence.")
 
     source_dir = runs_dir / task_id / f".artifact-source-attempt-{attempt}"
     if source_dir.exists():
@@ -398,6 +404,11 @@ def publish_review_artifact(evidence: dict[str, Any], runs_dir: Path,
         shutil.copyfile(diff_source, source_dir / "review.diff")
         portable = dict(evidence)
         portable["diff_path"] = "review.diff"
+        portable["sandbox"] = {
+            "status": sandbox_evidence["sandbox_status"],
+            "backend": sandbox_evidence["sandbox_backend"],
+            "profile_sha256": sandbox_evidence["sandbox_profile_sha256"],
+        }
         portable.pop("evidence_path", None)
         acceptance = portable.get("acceptance", {})
         checks = acceptance.get("automated_checks", {})
@@ -442,6 +453,10 @@ def verify_review_artifact(record: dict[str, Any]) -> dict[str, Any]:
     if not evidence_path or not Path(evidence_path).is_file():
         raise ValueError("Original review evidence is missing.")
     original = json.loads(Path(evidence_path).read_text(encoding="utf-8"))
+    sandbox = artifact_evidence.get("sandbox", {})
+    if (sandbox.get("status") != "enforced" or not sandbox.get("backend")
+            or not re.fullmatch(r"[0-9a-f]{64}", str(sandbox.get("profile_sha256", "")))):
+        raise ValueError("Review artifact is missing verified sandbox provenance.")
     if (artifact_evidence.get("task_id") != record.get("task_id")
             or artifact_evidence.get("fingerprint") != original.get("fingerprint")
             or artifact_evidence.get("base_commit") != original.get("base_commit")
@@ -541,6 +556,7 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             record["handoff"] = str(task_output)
             sandbox_enforced = not require_sandbox
             sandbox_error = None
+            sandbox_evidence = None
             if result.returncode == 0 and require_sandbox:
                 try:
                     handoff = json.loads(task_output.read_text(encoding="utf-8"))
@@ -580,7 +596,7 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                         and automated_checks["status"] in {"passed", "not_configured"}):
                     try:
                         record["review_artifact"] = publish_review_artifact(
-                            evidence, runs_dir, task_id, attempt,
+                            evidence, runs_dir, task_id, attempt, sandbox_evidence,
                         )
                     except (OSError, ValueError, RuntimeError) as exc:
                         artifact_error = str(exc)
