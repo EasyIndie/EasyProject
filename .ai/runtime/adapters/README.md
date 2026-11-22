@@ -23,7 +23,7 @@ Supported harness names: `pi`, `codex`, and `claude-code`. The corresponding exe
 | Secrets | Rejected | Rejected | Rejected |
 | External side effects | Rejected | Rejected | Rejected |
 
-This is intentionally conservative. The adapter does not provide a universal security sandbox. Codex enforces workspace sandboxing at the OS boundary. Claude Code's default permission mode relies on the user's configured permissions and may prompt. Pi's `--tools` allowlist is a capability restriction, not a filesystem sandbox, so write access is never granted implicitly: a write task must be launched with `--allow-unsandboxed-pi-write`. This is a deliberate unsafe override, not an OS sandbox; the Worktree does not prevent host access. With that acknowledgement Pi receives `edit`, `write`, and `bash`; without it the task is rejected. Network denial remains advisory for Pi because the adapter cannot enforce it.
+This is intentionally conservative. The adapter does not provide a universal security sandbox. Codex enforces workspace sandboxing at the OS boundary. Claude Code's default permission mode relies on the user's configured permissions and may prompt. Pi's `--tools` allowlist is a capability restriction, not a filesystem sandbox. For orchestrated tasks, the unsafe override must be supplied to `agent-orchestrate.py --allow-unsandboxed-pi-write`; the authorization is never inferred from the editable Task Envelope. Direct `agent-run.py` invocations require their own explicit flag. This is not an OS sandbox; a Worktree does not prevent host access. Network denial remains advisory for Pi because the adapter cannot enforce it.
 
 ## Output and review
 
