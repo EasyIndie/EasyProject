@@ -151,7 +151,9 @@ class ArtifactBrokerTests(unittest.TestCase):
             report.write_text("tampered", encoding="utf-8")
             with self.assertRaises(broker.ArtifactError):
                 broker.verify_artifact(artifact_dir)
-            os.chmod(report, stat.S_IRUSR)
+            os.chmod(report, stat.S_IWUSR | stat.S_IRUSR)
+            report.write_text('{"status":"passed"}\\n', encoding="utf-8")
+            os.chmod(report, 0o444)
             extra = artifact_dir / "extra.txt"
             os.chmod(artifact_dir, 0o755)
             extra.write_text("undeclared", encoding="utf-8")
