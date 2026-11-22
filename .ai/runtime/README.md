@@ -46,3 +46,7 @@ Do not use `completed` when checks were skipped or when the result relies on unv
 ## Artifact exchange
 
 See [Immutable Artifact Broker](artifacts/README.md) for the standalone content-addressed export, verification and read-only reviewer snapshot CLI. Sandbox-required Orchestrator runs export immutable review evidence after the Agent and sandboxed checks exit; approval and integration re-verify the artifact. Legacy unsandboxed runs do not auto-export. Agents must not exchange files through shared writable directories.
+
+## Sandbox backend decision
+
+See [ADR-001](sandbox/ADR-001-backend-selection.md) for why Linux Rootless Podman is the first full-profile backend and why macOS Seatbelt alone is not treated as full isolation.
