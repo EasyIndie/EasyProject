@@ -433,11 +433,25 @@ def continue_run(args: argparse.Namespace) -> int:
         print(json.dumps(json.loads(state_path.read_text(encoding="utf-8")),
                          ensure_ascii=False, indent=2))
         return 0
+    manifest_path = run_dir / "manifest.json"
+    if not manifest_path.is_file():
+        raise ValueError("Evolution manifest is missing; refusing to resume without its control-plane record.")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    pi_authorized = (
+        manifest.get("harness") == "pi"
+        and manifest.get("pi_unsandboxed_write_authorized") is True
+    )
     if args.action == "resume":
-        return invoke_candidate(candidate, run_dir, resume=True)
+        return invoke_candidate(
+            candidate, run_dir, resume=True,
+            allow_unsandboxed_pi_write=pi_authorized,
+        )
     if args.action in {"approve", "integrate", "cancel"}:
         flag = {"approve": "--approve", "integrate": "--integrate", "cancel": "--cancel"}[args.action]
-        return invoke_candidate(candidate, run_dir, action=[flag, args.id], resume=True)
+        return invoke_candidate(
+            candidate, run_dir, action=[flag, args.id], resume=True,
+            allow_unsandboxed_pi_write=pi_authorized,
+        )
     raise ValueError(f"unsupported action: {args.action}")
 
 
