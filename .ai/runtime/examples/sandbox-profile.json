@@ -8,6 +8,7 @@
     "workspace_write": true,
     "stable_checkout": "deny",
     "other_agent_workspaces": "deny",
+    "shared_git_metadata": "deny",
     "user_home": "deny",
     "credentials": "deny",
     "runtime_directory": "deny",
