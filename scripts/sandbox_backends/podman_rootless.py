@@ -20,6 +20,19 @@ class RootlessPodmanBackend:
         self.podman = podman or shutil.which("podman") or "podman"
 
     @staticmethod
+    def _host_environment() -> dict[str, str]:
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": str(Path.home()),
+            "LANG": "C",
+            "LC_ALL": "C",
+        }
+        for key in ("XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"):
+            if os.environ.get(key):
+                env[key] = os.environ[key]
+        return env
+
+    @staticmethod
     def _delegated_controllers() -> tuple[set[str], str]:
         root_file = Path("/sys/fs/cgroup/cgroup.controllers")
         if not root_file.is_file():
@@ -37,8 +50,7 @@ class RootlessPodmanBackend:
             result = subprocess.run(
                 [systemctl, "--user", "show", "--property=ControlGroup", "--value"],
                 text=True, capture_output=True, check=False, timeout=5,
-                env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-                     "HOME": str(Path.home()), "LANG": "C"},
+                env=RootlessPodmanBackend._host_environment(),
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             return set(), f"cannot inspect user cgroup: {exc}"
@@ -68,8 +80,7 @@ class RootlessPodmanBackend:
                 result = subprocess.run(
                     [self.podman, "info", "--format", "json"],
                     text=True, capture_output=True, check=False, timeout=8,
-                    env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-                         "HOME": str(Path.home()), "LANG": "C"},
+                    env=self._host_environment(),
                 )
                 if result.returncode:
                     failures.append("podman info failed: " + result.stderr.strip())
