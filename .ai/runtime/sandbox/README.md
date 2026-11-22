@@ -111,6 +111,10 @@ A backend is not production-ready until tests demonstrate denial of:
 
 Record backend/version, host OS, effective profile hash, task ID, start/end, exit/termination reason, resource usage, policy denials and artifact digests. Do not record secret values.
 
+## Backend selection
+
+See [ADR-001: Production Sandbox Backend Selection](ADR-001-backend-selection.md) for the platform decision, Linux Rootless Podman prerequisites, macOS Seatbelt limitations, isolated Git metadata requirement and Credential/Network Broker dependency.
+
 ## Launcher implementation status
 
 The current launcher contract is implemented in `scripts/sandbox_runtime.py`. The Orchestrator accepts the trusted control-plane switch `--require-sandbox` (default profile: the stable checkout's `.ai/runtime/examples/sandbox-profile.json`) and passes it to every Agent Runner. The Agent Runner accepts `--require-sandbox --sandbox-profile <file>` and refuses to start when no complete backend is registered. Its handoff records `sandbox_status`, backend ID and profile digest. Legacy runs without `--require-sandbox` are explicitly marked `not-enforced`; they are not considered isolated.
