@@ -115,6 +115,10 @@ class SandboxRuntimeTests(unittest.TestCase):
                  "network_access": False, "secret_access": False}
             )
             self.assertEqual(evidence["status"], "enforced")
+            restricted = profile()
+            restricted["filesystem"]["workspace_write"] = False
+            restricted["filesystem"]["write_paths"] = []
+            profile_path.write_text(json.dumps(restricted), encoding="utf-8")
             with self.assertRaises(sandbox.SandboxProfileError):
                 manager.build_command(
                     ["developer"], profile_path, "task-needs-write",
