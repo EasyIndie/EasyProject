@@ -237,6 +237,7 @@ def initial_state(plan: dict[str, Any], use_worktrees: bool = False,
         "updated_at": now(),
         "tasks": {
             item["task_id"]: {
+                "task_id": item["task_id"],
                 "status": "pending", "attempts": 0, "handoff": None,
                 "last_exit_code": None, "worktree": None, "base_commit": None, "updated_at": now()
             }
@@ -404,7 +405,7 @@ def publish_review_artifact(evidence: dict[str, Any], runs_dir: Path,
                 if item.get(key):
                     item[key] = Path(item[key]).name
         (source_dir / "review-evidence.json").write_text(
-            json.dumps(portable, ensure_ascii=False, indent=2) + "\\n",
+            json.dumps(portable, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
         result = export_artifact(
@@ -648,6 +649,8 @@ def approve(task_id: str, state: dict[str, Any], state_path: Path) -> None:
         raise ValueError("A failed handoff cannot be approved.")
     if record.get("automated_checks", {}).get("status") == "failed":
         raise ValueError("Configured acceptance checks failed; task cannot be approved.")
+    if state.get("sandbox_required", False):
+        verify_review_artifact(record)
     if record.get("worktree"):
         verify_change_evidence(Path(record["worktree"]), record)
         record.update(status="approved", approved_at=now(), updated_at=now())
@@ -716,6 +719,8 @@ def integrate_task(repo: Path, task_id: str, state: dict[str, Any],
         raise ValueError("Target branch no longer contains the task base commit; rebase/recreate the task deliberately.")
 
     verify_change_evidence(worktree, record)
+    if state.get("sandbox_required", False):
+        verify_review_artifact(record)
     worktree_head = git_output(worktree, "rev-parse", "HEAD")
     if not is_ancestor(worktree, base_commit, worktree_head):
         raise ValueError("Task worktree HEAD is not based on its recorded base commit.")
