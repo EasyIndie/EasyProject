@@ -409,7 +409,7 @@ def publish_review_artifact(evidence: dict[str, Any], runs_dir: Path,
             encoding="utf-8",
         )
         result = export_artifact(
-            source_dir, runs_dir / "artifacts", task_id, "review-evidence",
+            source_dir, runs_dir.parent / f"{runs_dir.name}.artifacts", task_id, "review-evidence",
             ["review.diff", "review-evidence.json"], evidence.get("base_commit"),
         )
         manifest = result["manifest"]
