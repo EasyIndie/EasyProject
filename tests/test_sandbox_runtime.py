@@ -97,7 +97,30 @@ class SandboxRuntimeTests(unittest.TestCase):
             profile_path.write_text(json.dumps(profile()), encoding="utf-8")
             with self.assertRaises(sandbox.SandboxBackendUnavailable):
                 sandbox.SandboxManager().build_command(
-                    ["pi"], profile_path, "task-1", Path(tmp), Path(tmp) / "runtime"
+                    ["pi"], profile_path, "task-1", Path(tmp), Path(tmp) / "runtime",
+                    {"repository_read": True, "repository_write": True,
+                     "network_access": False, "secret_access": False}
+                )
+
+    def test_task_permissions_narrow_profile_without_expanding_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            profile_path = Path(tmp) / "profile.json"
+            profile_path.write_text(json.dumps(profile()), encoding="utf-8")
+            backend = FakeBackend()
+            manager = sandbox.SandboxManager([backend])
+            _, _, evidence = manager.build_command(
+                ["reviewer"], profile_path, "task-read-only",
+                Path(tmp), Path(tmp) / "runtime",
+                {"repository_read": True, "repository_write": False,
+                 "network_access": False, "secret_access": False}
+            )
+            self.assertEqual(evidence["status"], "enforced")
+            with self.assertRaises(sandbox.SandboxProfileError):
+                manager.build_command(
+                    ["developer"], profile_path, "task-needs-write",
+                    Path(tmp), Path(tmp) / "runtime",
+                    {"repository_read": True, "repository_write": True,
+                     "network_access": False, "secret_access": False}
                 )
 
     def test_registered_backend_receives_frozen_policy_and_wraps_whole_command(self):
@@ -107,7 +130,9 @@ class SandboxRuntimeTests(unittest.TestCase):
             manager = sandbox.SandboxManager([FakeBackend()])
             command, environment, evidence = manager.build_command(
                 ["claude", "-p"], profile_path, "task-1",
-                Path(tmp), Path(tmp) / "runtime"
+                Path(tmp), Path(tmp) / "runtime",
+                {"repository_read": True, "repository_write": True,
+                 "network_access": False, "secret_access": False}
             )
             self.assertEqual(command, ["sandbox-test-wrapper", "claude", "-p"])
             self.assertEqual(environment, {"PATH": "/sandbox/bin", "HOME": "/sandbox/home"})
