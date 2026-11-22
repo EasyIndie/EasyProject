@@ -758,7 +758,7 @@ def main() -> int:
             require_sandbox=args.require_sandbox,
             sandbox_profile=sandbox_profile,
         )
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
         print(f"agent-orchestrate: {exc}", file=sys.stderr)
         return 2
 
