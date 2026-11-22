@@ -96,7 +96,8 @@ class ArtifactBrokerTests(unittest.TestCase):
                 )
 
     def test_sensitive_paths_are_never_exported(self):
-        for path in (".env", ".env.production", ".ssh/id_ed25519", ".aws/credentials", "build/signing.p12"):
+        for path in (".env", ".env.production", "config/production.env", ".git/config",
+                     ".ssh/id_ed25519", ".aws/credentials", "build/signing.p12"):
             with self.subTest(path=path), self.assertRaises(broker.ArtifactError):
                 broker.normalize_relative_path(path)
 
