@@ -159,6 +159,8 @@ class SandboxManager:
     ) -> tuple[list[str], dict[str, str], dict]:
         profile, _base_digest = load_profile(profile_path)
         filesystem = profile["filesystem"]
+        if task_permissions.get("repository_write", False) and not task_permissions.get("repository_read", False):
+            raise SandboxProfileError("Task write permission requires repository_read permission.")
         if task_permissions.get("repository_read", False) and not filesystem["workspace_read"]:
             raise SandboxProfileError("Task requests repository read, but the trusted profile denies workspace reads.")
         if task_permissions.get("repository_write", False) and not filesystem["workspace_write"]:
