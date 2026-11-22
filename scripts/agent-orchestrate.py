@@ -570,6 +570,12 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
                     )
                 except (OSError, json.JSONDecodeError) as exc:
                     sandbox_error = f"Required sandbox handoff evidence is missing or invalid: {exc}"
+                if sandbox_enforced:
+                    sandbox_evidence = {
+                        "sandbox_status": sandbox_artifacts["sandbox_status"],
+                        "sandbox_backend": sandbox_artifacts["sandbox_backend"],
+                        "sandbox_profile_sha256": sandbox_artifacts["sandbox_profile_sha256"],
+                    }
                 if not sandbox_enforced and sandbox_error is None:
                     sandbox_error = "Runner completed without an enforced sandbox status."
             automated_checks = {"status": "not_configured", "results": []}
