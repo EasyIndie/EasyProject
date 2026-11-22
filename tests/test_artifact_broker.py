@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import stat
 import tempfile
@@ -58,6 +59,8 @@ class ArtifactBrokerTests(unittest.TestCase):
             destination = root / "reviewer-snapshot"
             materialized = broker.materialize_artifact(artifact_dir, destination)
             self.assertTrue(materialized["read_only"])
+            snapshot_manifest = json.loads((destination / "artifact.json").read_text(encoding="utf-8"))
+            self.assertEqual(snapshot_manifest["artifact_id"], manifest["artifact_id"])
             self.assertEqual((destination / "src" / "main.py").read_text(), "print('hello')\n")
             self.assertFalse(os.access(destination / "src" / "main.py", os.W_OK))
 
