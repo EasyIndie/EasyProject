@@ -19,6 +19,7 @@ from typing import Sequence
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
 TASK_SCHEMA = ROOT / ".ai/runtime/schemas/task.schema.json"
 HANDOFF_SCHEMA = ROOT / ".ai/runtime/schemas/handoff.schema.json"
 
@@ -174,6 +175,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, help="Write raw stdout/stderr and a handoff draft to this JSON file")
     parser.add_argument("--cwd", type=Path, default=ROOT, help="Repository workspace in which the agent process runs")
     parser.add_argument("--cancel-file", type=Path, help="File created by the orchestrator to request cancellation")
+    parser.add_argument("--require-sandbox", action="store_true",
+                        help="Refuse to start unless a backend enforces the complete task profile.")
+    parser.add_argument("--sandbox-profile", type=Path,
+                        help="Versioned Sandbox Profile JSON required with --require-sandbox.")
+    parser.add_argument("--sandbox-runtime-dir", type=Path,
+                        default=ROOT / ".agent-runs/sandbox-runtime",
+                        help="Private control-plane runtime directory; never mounted writable into a task.")
     parser.add_argument(
         "--allow-unsandboxed-pi-write", action="store_true",
         help="Explicitly allow Pi write access without an OS sandbox; unsafe and not recommended.",
@@ -191,6 +199,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             allow_unsandboxed_pi_write=args.allow_unsandboxed_pi_write,
         )
         workspace = resolve_workspace(args.cwd)
+        if args.require_sandbox and not args.sandbox_profile:
+            raise ValueError("--require-sandbox requires --sandbox-profile.")
+        if args.sandbox_profile and not args.require_sandbox:
+            raise ValueError("--sandbox-profile requires --require-sandbox; profiles are never advisory.")
+        sandbox_evidence = {"status": "not-enforced", "reason": "legacy local execution without --require-sandbox"}
+        if args.require_sandbox:
+            from sandbox_runtime import SandboxManager
+            manager = SandboxManager()
+            command, sandbox_evidence = manager.build_command(
+                command, args.sandbox_profile, task["task_id"], workspace,
+                args.sandbox_runtime_dir,
+            )
     except (ValueError, OSError, KeyError) as exc:
         print(f"agent-run: {exc}", file=sys.stderr)
         return 2
