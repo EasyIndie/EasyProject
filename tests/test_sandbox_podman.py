@@ -21,16 +21,16 @@ class PodmanTests(unittest.TestCase):
     def test_rootless_private_networkless_and_limits(self):
         with tempfile.TemporaryDirectory() as tmp:
             ws=Path(tmp)/"ws"; ws.mkdir()
-            cmd=podman.RootlessPodmanBackend("/usr/bin/podman").build_command(["python","-m","pytest"],spec_for(ws)); joined=" ".join(cmd)
+            cmd=podman.RootlessPodmanBackend("/usr/bin/podman").build_command(["python","-m","pytest"],spec_for(ws),allow_unverified=True); joined=" ".join(cmd)
             for flag in ("--userns=keep-id","--network=none","--pid=private","--read-only","--cap-drop=ALL","--security-opt=no-new-privileges","--pids-limit=128","--memory=2048m","--cpus=2","--pull=never","dst=/workspace,rw","dst=/workspace/.git,ro","GIT_OPTIONAL_LOCKS=0"): self.assertIn(flag,joined)
             self.assertEqual(cmd[-3:],["python","-m","pytest"])
     def test_read_only_workspace(self):
         with tempfile.TemporaryDirectory() as tmp:
-            cmd=podman.RootlessPodmanBackend().build_command(["true"],spec_for(Path(tmp),False)); self.assertIn("dst=/workspace,ro"," ".join(cmd))
+            cmd=podman.RootlessPodmanBackend().build_command(["true"],spec_for(Path(tmp),False),allow_unverified=True); self.assertIn("dst=/workspace,ro"," ".join(cmd))
     def test_git_worktree_pointer_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             ws=Path(tmp); (ws/".git").write_text("gitdir: /shared/.git/worktrees/task")
-            with self.assertRaises(SandboxEnforcementError): podman.RootlessPodmanBackend().build_command(["true"],spec_for(ws))
+            with self.assertRaises(SandboxEnforcementError): podman.RootlessPodmanBackend().build_command(["true"],spec_for(ws),allow_unverified=True)
     def test_shared_git_common_directory_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             ws=Path(tmp); (ws/".git").mkdir(); (ws/".git"/"commondir").write_text("../shared")
@@ -38,7 +38,19 @@ class PodmanTests(unittest.TestCase):
     def test_mutable_image_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             for image in ("agent:latest","agent:1.0","agent@sha256:abc"):
-                with self.subTest(image=image), self.assertRaises(SandboxEnforcementError): podman.RootlessPodmanBackend().build_command(["true"],spec_for(Path(tmp),image=image))
+                with self.subTest(image=image), self.assertRaises(SandboxEnforcementError): podman.RootlessPodmanBackend().build_command(["true"],spec_for(Path(tmp),image=image),allow_unverified=True)
+    def test_build_command_requires_conformance_evidence_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backend=podman.RootlessPodmanBackend(); spec=spec_for(Path(tmp))
+            with patch.object(backend,"_read_conformance_evidence",return_value=(None,"conformance evidence missing")):
+                with self.assertRaisesRegex(SandboxEnforcementError,"conformance evidence missing"): backend.build_command(["true"],spec)
+    def test_backend_probe_fails_closed_without_conformance_marker(self):
+        backend=podman.RootlessPodmanBackend()
+        ready=podman.SandboxCapabilities(backend.backend_id,"linux",True,True,True,True,True,True,False,False,"ready","environment only")
+        with tempfile.TemporaryDirectory() as tmp, patch.object(backend,"probe_environment",return_value=ready), patch.object(podman,"CONFORMANCE_MARKER",Path(tmp)/"missing.json"):
+            caps=backend.probe()
+        self.assertFalse(caps.available)
+        self.assertEqual(caps.status,"conformance-required")
     def test_agent_environment_is_minimal(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict("os.environ",{"XDG_RUNTIME_DIR":tmp,"PATH":"/usr/bin"},clear=True): env=podman.RootlessPodmanBackend().build_environment(spec_for(Path(tmp)))
