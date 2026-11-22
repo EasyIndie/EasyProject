@@ -117,6 +117,23 @@ class OrchestratorTests(unittest.TestCase):
         )
         self.assertIn("--allow-unsandboxed-pi-write", command)
 
+    def test_sandbox_requirement_is_passed_from_control_plane_not_task_envelope(self):
+        command = orchestrator.build_runner_command(
+            Path("task.json"), "claude-code", Path("handoff.json"),
+            Path("workspace"), Path("cancel.request"), False,
+            require_sandbox=True, sandbox_profile=Path("/trusted/profile.json"),
+        )
+        self.assertIn("--require-sandbox", command)
+        self.assertIn("--sandbox-profile", command)
+        self.assertIn("/trusted/profile.json", command)
+        state = orchestrator.initial_state(
+            plan([item("task-a")]), sandbox_required=True,
+            sandbox_profile="/trusted/profile.json",
+            sandbox_profile_sha256="a" * 64,
+        )
+        self.assertTrue(state["sandbox_required"])
+        self.assertEqual(state["sandbox_profile_sha256"], "a" * 64)
+
     def test_valid_dag(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "plan.json"
