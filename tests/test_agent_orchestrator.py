@@ -106,7 +106,6 @@ class OrchestratorTests(unittest.TestCase):
         output = Path("handoff.json")
         workspace = Path("workspace")
         cancel = Path("cancel.request")
-        envelope = {"harness_options": {"pi_unsandboxed_write": True}}
         # An editable Task Envelope is not an authorization source.
         command = orchestrator.build_runner_command(
             task_path, "pi", output, workspace, cancel, False
