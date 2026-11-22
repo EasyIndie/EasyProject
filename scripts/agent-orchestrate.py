@@ -74,7 +74,8 @@ def stop_command_tree(process: subprocess.Popen[str]) -> tuple[str, str]:
 
 
 def run_command_controlled(argv: list[str], workspace: Path, timeout_seconds: int,
-                           cancel_file: Path | None = None) -> tuple[int, str, str, str | None]:
+                           cancel_file: Path | None = None,
+                           environment: dict[str, str] | None = None) -> tuple[int, str, str, str | None]:
     options: dict[str, object] = {}
     if os.name == "nt":
         options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -82,7 +83,8 @@ def run_command_controlled(argv: list[str], workspace: Path, timeout_seconds: in
         options["start_new_session"] = True
     process = subprocess.Popen(
         argv, cwd=workspace, text=True, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, **options,
+        stderr=subprocess.PIPE,
+        env=environment if environment is not None else os.environ.copy(), **options,
     )
     started = time.monotonic()
     while True:
@@ -99,7 +101,11 @@ def run_command_controlled(argv: list[str], workspace: Path, timeout_seconds: in
 
 
 def run_acceptance_checks(check_ids: list[str], workspace: Path,
-                          runs_dir: Path, task_id: str, attempt: int, cancel_file: Path | None = None) -> dict[str, Any]:
+                          runs_dir: Path, task_id: str, attempt: int,
+                          cancel_file: Path | None = None,
+                          require_sandbox: bool = False,
+                          sandbox_profile: Path | None = None,
+                          task_permissions: dict[str, Any] | None = None) -> dict[str, Any]:
     """Run only fixed, allowlisted test commands and persist their outputs."""
     if not check_ids:
         return {"status": "not_configured", "results": []}
@@ -110,16 +116,29 @@ def run_acceptance_checks(check_ids: list[str], workspace: Path,
         argv = acceptance_command(check_id)
         stdout_path = output_dir / f"{check_id}.stdout.txt"
         stderr_path = output_dir / f"{check_id}.stderr.txt"
+        environment = None
+        check_timeout = ACCEPTANCE_CHECK_TIMEOUT_SECONDS
+        sandbox_evidence = None
         if shutil.which(argv[0]) is None:
             stdout, stderr, exit_code, result = "", f"Executable not found: {argv[0]}", None, "not_found"
         else:
+            if require_sandbox:
+                if sandbox_profile is None or task_permissions is None:
+                    raise ValueError("Sandboxed acceptance checks require the trusted profile and task permissions.")
+                from sandbox_runtime import SandboxManager
+                argv, environment, sandbox_evidence = SandboxManager().build_command(
+                    argv, sandbox_profile, f"{task_id}-check-{attempt}-{check_id}",
+                    workspace, runs_dir / "sandbox-runtime" / task_id / check_id,
+                    task_permissions,
+                )
+                check_timeout = min(check_timeout, sandbox_evidence["timeout_seconds"])
             exit_code, stdout, stderr, termination = run_command_controlled(
-                argv, workspace, ACCEPTANCE_CHECK_TIMEOUT_SECONDS, cancel_file,
+                argv, workspace, check_timeout, cancel_file, environment,
             )
             if termination == "cancelled":
                 result = "cancelled"
             elif termination == "timeout":
-                stderr += f"\\nTimed out after {ACCEPTANCE_CHECK_TIMEOUT_SECONDS} seconds."
+                stderr += f"\\nTimed out after {check_timeout} seconds."
                 result = "timeout"
             else:
                 result = "passed" if exit_code == 0 else "failed"
@@ -132,6 +151,9 @@ def run_acceptance_checks(check_ids: list[str], workspace: Path,
             "exit_code": exit_code,
             "stdout_path": str(stdout_path),
             "stderr_path": str(stderr_path),
+            "sandbox_status": sandbox_evidence["status"] if sandbox_evidence else "not-requested",
+            "sandbox_backend": sandbox_evidence.get("backend") if sandbox_evidence else None,
+            "sandbox_profile_sha256": sandbox_evidence.get("profile_sha256") if sandbox_evidence else None,
         })
         if result == "cancelled":
             return {"status": "cancelled", "results": results}
@@ -216,6 +238,7 @@ def initial_state(plan: dict[str, Any], use_worktrees: bool = False,
         "updated_at": now(),
         "tasks": {
             item["task_id"]: {
+                "task_id": item["task_id"],
                 "status": "pending", "attempts": 0, "handoff": None,
                 "last_exit_code": None, "worktree": None, "base_commit": None, "updated_at": now()
             }
@@ -359,6 +382,90 @@ def verify_change_evidence(repo: Path, record: dict[str, Any]) -> None:
 
 
 
+def publish_review_artifact(evidence: dict[str, Any], runs_dir: Path,
+                           task_id: str, attempt: int,
+                           sandbox_evidence: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Publish a portable immutable review snapshot after a sandboxed task has stopped."""
+    from artifact_broker import export_artifact
+    if (not isinstance(sandbox_evidence, dict)
+            or sandbox_evidence.get("sandbox_status") != "enforced"
+            or not sandbox_evidence.get("sandbox_backend")
+            or not re.fullmatch(r"[0-9a-f]{64}", str(sandbox_evidence.get("sandbox_profile_sha256", "")))):
+        raise ValueError("Review artifact publication requires verified sandbox backend and profile evidence.")
+
+    source_dir = runs_dir / task_id / f".artifact-source-attempt-{attempt}"
+    if source_dir.exists():
+        raise ValueError(f"Artifact staging directory already exists: {source_dir}")
+    source_dir.mkdir(parents=True)
+    try:
+        diff_source = Path(evidence["diff_path"])
+        if diff_source.is_symlink() or not diff_source.is_file():
+            raise ValueError("Review diff is missing or unsafe; cannot publish review artifact.")
+        shutil.copyfile(diff_source, source_dir / "review.diff")
+        portable = dict(evidence)
+        portable["diff_path"] = "review.diff"
+        portable["sandbox"] = {
+            "status": sandbox_evidence["sandbox_status"],
+            "backend": sandbox_evidence["sandbox_backend"],
+            "profile_sha256": sandbox_evidence["sandbox_profile_sha256"],
+        }
+        portable.pop("evidence_path", None)
+        acceptance = portable.get("acceptance", {})
+        checks = acceptance.get("automated_checks", {})
+        for item in checks.get("results", []):
+            for key in ("stdout_path", "stderr_path"):
+                if item.get(key):
+                    item[key] = Path(item[key]).name
+        (source_dir / "review-evidence.json").write_text(
+            json.dumps(portable, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        result = export_artifact(
+            source_dir, runs_dir.parent / f"{runs_dir.name}.artifacts", task_id, "review-evidence",
+            ["review.diff", "review-evidence.json"], evidence.get("base_commit"),
+        )
+        manifest = result["manifest"]
+        return {
+            "artifact_id": manifest["artifact_id"],
+            "artifact_dir": result["artifact_dir"],
+            "kind": manifest["kind"],
+            "source_revision": manifest["source_revision"],
+        }
+    finally:
+        shutil.rmtree(source_dir, ignore_errors=True)
+
+
+def verify_review_artifact(record: dict[str, Any]) -> dict[str, Any]:
+    """Verify immutable artifact integrity and bind it to the reviewed workspace evidence."""
+    from artifact_broker import verify_artifact
+
+    artifact = record.get("review_artifact")
+    if not isinstance(artifact, dict) or not artifact.get("artifact_dir"):
+        raise ValueError("Sandbox-required task is missing its immutable review artifact.")
+    artifact_dir = Path(artifact["artifact_dir"])
+    manifest = verify_artifact(artifact_dir)
+    if (manifest.get("task_id") != record.get("task_id")
+            or manifest.get("kind") != "review-evidence"
+            or manifest.get("artifact_id") != artifact.get("artifact_id")):
+        raise ValueError("Review artifact manifest does not match the task journal.")
+    artifact_evidence = json.loads((artifact_dir / "review-evidence.json").read_text(encoding="utf-8"))
+    evidence_path = record.get("review_evidence")
+    if not evidence_path or Path(evidence_path).is_symlink() or not Path(evidence_path).is_file():
+        raise ValueError("Original review evidence is missing or unsafe.")
+    original = json.loads(Path(evidence_path).read_text(encoding="utf-8"))
+    sandbox = artifact_evidence.get("sandbox", {})
+    if (sandbox.get("status") != "enforced" or not sandbox.get("backend")
+            or not re.fullmatch(r"[0-9a-f]{64}", str(sandbox.get("profile_sha256", "")))):
+        raise ValueError("Review artifact is missing verified sandbox provenance.")
+    comparable_fields = ("task_id", "fingerprint", "base_commit", "changed_files", "diff_stat", "diff_check")
+    if (any(artifact_evidence.get(field) != original.get(field) for field in comparable_fields)
+            or artifact_evidence.get("acceptance", {}).get("automated_checks", {}).get("status")
+               != original.get("acceptance", {}).get("automated_checks", {}).get("status")
+            or manifest.get("source_revision") != original.get("base_commit")):
+        raise ValueError("Immutable review artifact is not bound to the current task evidence.")
+    return manifest
+
+
 def resolve_task_path(task_file: str, runs_dir: Path) -> Path:
     """Resolve a task file from the repository or this run's external data directory."""
     candidate = Path(task_file)
@@ -448,20 +555,65 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             result = subprocess.run(command, cwd=ROOT, check=False)
             record["last_exit_code"] = result.returncode
             record["handoff"] = str(task_output)
+            sandbox_enforced = not require_sandbox
+            sandbox_error = None
+            sandbox_evidence = None
+            if result.returncode == 0 and require_sandbox:
+                try:
+                    handoff = json.loads(task_output.read_text(encoding="utf-8"))
+                    sandbox_artifacts = handoff.get("artifacts", {})
+                    sandbox_enforced = (
+                        sandbox_artifacts.get("sandbox_status") == "enforced"
+                        and isinstance(sandbox_artifacts.get("sandbox_backend"), str)
+                        and bool(sandbox_artifacts.get("sandbox_backend"))
+                        and re.fullmatch(r"[0-9a-f]{64}", str(sandbox_artifacts.get("sandbox_profile_sha256", "")))
+                    )
+                except (OSError, json.JSONDecodeError) as exc:
+                    sandbox_error = f"Required sandbox handoff evidence is missing or invalid: {exc}"
+                if sandbox_enforced:
+                    sandbox_evidence = {
+                        "sandbox_status": sandbox_artifacts["sandbox_status"],
+                        "sandbox_backend": sandbox_artifacts["sandbox_backend"],
+                        "sandbox_profile_sha256": sandbox_artifacts["sandbox_profile_sha256"],
+                    }
+                if not sandbox_enforced and sandbox_error is None:
+                    sandbox_error = "Runner completed without an enforced sandbox status."
             automated_checks = {"status": "not_configured", "results": []}
-            if result.returncode == 0:
-                automated_checks = run_acceptance_checks(
-                    task_envelope.get("acceptance_checks", []), workspace,
-                    runs_dir, task_id, attempt, cancel_file,
-                )
+            if result.returncode == 0 and sandbox_error is None:
+                try:
+                    automated_checks = run_acceptance_checks(
+                        task_envelope.get("acceptance_checks", []), workspace,
+                        runs_dir, task_id, attempt, cancel_file,
+                        require_sandbox=require_sandbox,
+                        sandbox_profile=sandbox_profile,
+                        task_permissions=task_envelope.get("permissions", {}),
+                    )
+                except RuntimeError as exc:
+                    automated_checks = {"status": "failed", "results": [], "error": str(exc)}
             record["automated_checks"] = automated_checks
-            if use_worktrees and record.get("base_commit"):
+            artifact_error = None
+            if (use_worktrees and record.get("base_commit")
+                    and sandbox_error is None and (not require_sandbox or sandbox_enforced)):
                 evidence = collect_change_evidence(
                     workspace, record["base_commit"], task_id, runs_dir,
                     automated_checks=automated_checks,
                 )
                 record["review_evidence"] = evidence["evidence_path"]
-            if result.returncode == 130 or automated_checks["status"] == "cancelled":
+                if (require_sandbox and sandbox_enforced
+                        and automated_checks["status"] in {"passed", "not_configured"}):
+                    try:
+                        record["review_artifact"] = publish_review_artifact(
+                            evidence, runs_dir, task_id, attempt, sandbox_evidence,
+                        )
+                    except (OSError, ValueError, RuntimeError) as exc:
+                        artifact_error = str(exc)
+            if artifact_error:
+                record.update(status="failed", termination_reason="artifact_export_failed",
+                              artifact_error=artifact_error, finished_at=now())
+            elif sandbox_error:
+                record.update(status="failed", termination_reason="sandbox_evidence_invalid",
+                              sandbox_error=sandbox_error, finished_at=now())
+            elif result.returncode == 130 or automated_checks["status"] == "cancelled":
                 record.update(status="cancelled", termination_reason="cancelled", finished_at=now())
             elif result.returncode == 0 and automated_checks["status"] in {"passed", "not_configured"}:
                 # The adapter intentionally emits partial; only explicit human
@@ -488,7 +640,8 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             progress = True
             # Stop after one actual agent invocation: review/approval is a gate.
             print(f"{task_id}: {record['status']} (exit={result.returncode}, checks={automated_checks['status']}, attempt={attempt})")
-            return 1 if result.returncode or automated_checks["status"] not in {"passed", "not_configured"} else 0
+            return 1 if (result.returncode or sandbox_error or artifact_error
+                         or automated_checks["status"] not in {"passed", "not_configured"}) else 0
     save_state(state_path, state)
     return 0
 
@@ -528,6 +681,8 @@ def approve(task_id: str, state: dict[str, Any], state_path: Path) -> None:
         raise ValueError("A failed handoff cannot be approved.")
     if record.get("automated_checks", {}).get("status") == "failed":
         raise ValueError("Configured acceptance checks failed; task cannot be approved.")
+    if state.get("sandbox_required", False):
+        verify_review_artifact(record)
     if record.get("worktree"):
         verify_change_evidence(Path(record["worktree"]), record)
         record.update(status="approved", approved_at=now(), updated_at=now())
@@ -596,6 +751,8 @@ def integrate_task(repo: Path, task_id: str, state: dict[str, Any],
         raise ValueError("Target branch no longer contains the task base commit; rebase/recreate the task deliberately.")
 
     verify_change_evidence(worktree, record)
+    if state.get("sandbox_required", False):
+        verify_review_artifact(record)
     worktree_head = git_output(worktree, "rev-parse", "HEAD")
     if not is_ancestor(worktree, base_commit, worktree_head):
         raise ValueError("Task worktree HEAD is not based on its recorded base commit.")

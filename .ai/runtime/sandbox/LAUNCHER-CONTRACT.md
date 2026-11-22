@@ -12,7 +12,7 @@ A backend is eligible only if it can enforce all of the following for the reques
 
 - workspace-only filesystem access, including denial of stable checkout, other task workspaces, shared Git common metadata/object/ref stores, user home, credentials and control-plane runtime;
 - default-deny network, no host/LAN access, and explicit egress proxy policy;
-- process-tree inheritance and reliable termination;
+- process-tree inheritance and reliable termination, including killing every descendant before the launcher reports task completion;
 - CPU, memory, process-count and wall-clock limits;
 - no privilege escalation and no host container-runtime socket;
 - effective-policy evidence (backend/version, profile digest and platform);
@@ -26,7 +26,7 @@ The manager rejects partial backends. A backend must not claim support based on 
 
 Implemented in `scripts/sandbox_runtime.py`:
 
-- `SandboxBackend.probe() -> SandboxCapabilities`
+- `SandboxBackend.probe() -> SandboxCapabilities` (must prove both process-tree inheritance and descendant cleanup on task exit)
 - `SandboxBackend.build_command(command, spec) -> argv`
 - `SandboxBackend.build_environment(spec) -> minimal env`
 - `SandboxManager.doctor()`
