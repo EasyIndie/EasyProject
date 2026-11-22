@@ -7,6 +7,7 @@ the complete harness process tree inside that boundary.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import platform
@@ -154,8 +155,33 @@ class SandboxManager:
         task_id: str,
         workspace: Path,
         runtime_directory: Path,
+        task_permissions: dict,
     ) -> tuple[list[str], dict[str, str], dict]:
-        profile, digest = load_profile(profile_path)
+        profile, _base_digest = load_profile(profile_path)
+        filesystem = profile["filesystem"]
+        if task_permissions.get("repository_read", False) and not filesystem["workspace_read"]:
+            raise SandboxProfileError("Task requests repository read, but the trusted profile denies workspace reads.")
+        if task_permissions.get("repository_write", False) and not filesystem["workspace_write"]:
+            raise SandboxProfileError("Task requests repository write, but the trusted profile denies workspace writes.")
+        # Task permissions can only narrow the trusted maximum profile, never expand it.
+        effective_profile = copy.deepcopy(profile)
+        effective_profile["filesystem"]["workspace_read"] = bool(
+            filesystem["workspace_read"] and task_permissions.get("repository_read", False)
+        )
+        effective_profile["filesystem"]["workspace_write"] = bool(
+            filesystem["workspace_write"] and task_permissions.get("repository_write", False)
+        )
+        if not effective_profile["filesystem"]["workspace_write"]:
+            effective_profile["filesystem"]["write_paths"] = []
+        if not effective_profile["filesystem"]["workspace_read"]:
+            effective_profile["filesystem"]["read_only_paths"] = []
+        if not task_permissions.get("network_access", False):
+            effective_profile["network"]["allowed_domains"] = []
+        if not task_permissions.get("secret_access", False):
+            effective_profile["secrets"]["brokered_credentials"] = []
+        canonical = json.dumps(effective_profile, sort_keys=True, separators=(",", ":")).encode()
+        digest = hashlib.sha256(canonical).hexdigest()
+        profile = effective_profile
         requested_platform = profile.get("platform", "auto")
         current = host_platform()
         if requested_platform not in ("auto", current):
