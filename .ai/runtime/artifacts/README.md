@@ -4,7 +4,7 @@
 
 The Artifact Broker is the target trusted control-plane utility for file exchange between Agent tasks, reviewers and the integrator. The standalone CLI and immutable storage contract are implemented. Orchestrator integration now exports a review artifact only for sandbox-required tasks after the Runner and sandboxed acceptance checks complete; approval and integration re-verify the artifact and bind it to the current review fingerprint. Agents must not share writable directories.
 
-The broker must run after the producing Agent and its descendants have stopped. The sandbox backend contract now requires termination of every task descendant before the launcher reports completion. Exporting a workspace while any Agent or check process is still writing creates a time-of-check/time-of-use race and does not produce a reliable snapshot. The broker validates source paths and file metadata, but a frozen source workspace is an operational precondition.
+The broker must run after the producing Agent and its descendants have stopped. The sandbox backend contract now requires both process-tree isolation and termination of every task descendant before the launcher reports completion; the Manager rejects backends that cannot prove both. Exporting a workspace while any Agent or check process is still writing creates a time-of-check/time-of-use race and does not produce a reliable snapshot. The broker validates source paths and file metadata, but a frozen source workspace is an operational precondition.
 
 ## Artifact format
 
