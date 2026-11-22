@@ -115,6 +115,7 @@ def write_manifest(run_dir: Path, run_id: str, goal: str,
         "approval_evidence": approval_evidence,
         "harness": harness,
         "acceptance_checks": checks,
+        "pi_unsandboxed_write_authorized": pi_unsandboxed_write_authorized,
         "stable": {
             "repository": str(ROOT),
             "branch": preflight_result["branch"],
