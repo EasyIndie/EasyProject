@@ -44,6 +44,7 @@ class SandboxCapabilities:
     enforces_network: bool
     isolates_process_tree: bool
     enforces_resource_limits: bool
+    supports_egress_proxy: bool
     supports_secrets_broker: bool
     status: str
     reason: str
@@ -122,6 +123,7 @@ class SandboxManager:
                 enforces_network=False,
                 isolates_process_tree=False,
                 enforces_resource_limits=False,
+                supports_egress_proxy=False,
                 supports_secrets_broker=False,
                 status="not-implemented",
                 reason="No production backend is registered; unsandboxed fallback is forbidden.",
@@ -184,9 +186,13 @@ class SandboxManager:
             if selected_id and backend.backend_id != selected_id:
                 continue
             caps = backend.probe()
+            needs_egress_proxy = bool(profile["network"].get("allowed_domains")) and profile["network"].get("egress_proxy_required", True)
+            needs_secrets_broker = bool(profile["secrets"].get("brokered_credentials"))
             if (caps.platform == current and caps.available
                     and caps.enforces_filesystem and caps.enforces_network
-                    and caps.isolates_process_tree and caps.enforces_resource_limits):
+                    and caps.isolates_process_tree and caps.enforces_resource_limits
+                    and (not needs_egress_proxy or caps.supports_egress_proxy)
+                    and (not needs_secrets_broker or caps.supports_secrets_broker)):
                 candidates.append(backend)
         if not candidates:
             raise SandboxBackendUnavailable(
