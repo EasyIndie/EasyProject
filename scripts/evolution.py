@@ -478,6 +478,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     action_parser = subparsers.add_parser("run", help="resume, inspect, approve, or integrate a candidate")
     action_parser.add_argument("--id", required=True)
     action_parser.add_argument("action", choices=("status", "resume", "approve", "integrate", "cancel"))
+    action_parser.add_argument(
+        "--allow-unsandboxed-pi-write", action="store_true",
+        help="Unsafe: freshly authorize Pi writes for this resume invocation.",
+    )
     args = parser.parse_args(argv)
     try:
         if args.command == "start":
