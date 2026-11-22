@@ -74,7 +74,8 @@ def stop_command_tree(process: subprocess.Popen[str]) -> tuple[str, str]:
 
 
 def run_command_controlled(argv: list[str], workspace: Path, timeout_seconds: int,
-                           cancel_file: Path | None = None) -> tuple[int, str, str, str | None]:
+                           cancel_file: Path | None = None,
+                           environment: dict[str, str] | None = None) -> tuple[int, str, str, str | None]:
     options: dict[str, object] = {}
     if os.name == "nt":
         options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -82,7 +83,8 @@ def run_command_controlled(argv: list[str], workspace: Path, timeout_seconds: in
         options["start_new_session"] = True
     process = subprocess.Popen(
         argv, cwd=workspace, text=True, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, **options,
+        stderr=subprocess.PIPE,
+        env=environment if environment is not None else os.environ.copy(), **options,
     )
     started = time.monotonic()
     while True:
@@ -99,7 +101,11 @@ def run_command_controlled(argv: list[str], workspace: Path, timeout_seconds: in
 
 
 def run_acceptance_checks(check_ids: list[str], workspace: Path,
-                          runs_dir: Path, task_id: str, attempt: int, cancel_file: Path | None = None) -> dict[str, Any]:
+                          runs_dir: Path, task_id: str, attempt: int,
+                          cancel_file: Path | None = None,
+                          require_sandbox: bool = False,
+                          sandbox_profile: Path | None = None,
+                          task_permissions: dict[str, Any] | None = None) -> dict[str, Any]:
     """Run only fixed, allowlisted test commands and persist their outputs."""
     if not check_ids:
         return {"status": "not_configured", "results": []}
@@ -110,11 +116,24 @@ def run_acceptance_checks(check_ids: list[str], workspace: Path,
         argv = acceptance_command(check_id)
         stdout_path = output_dir / f"{check_id}.stdout.txt"
         stderr_path = output_dir / f"{check_id}.stderr.txt"
+        environment = None
+        check_timeout = ACCEPTANCE_CHECK_TIMEOUT_SECONDS
+        sandbox_evidence = None
         if shutil.which(argv[0]) is None:
             stdout, stderr, exit_code, result = "", f"Executable not found: {argv[0]}", None, "not_found"
         else:
+            if require_sandbox:
+                if sandbox_profile is None or task_permissions is None:
+                    raise ValueError("Sandboxed acceptance checks require the trusted profile and task permissions.")
+                from sandbox_runtime import SandboxManager
+                argv, environment, sandbox_evidence = SandboxManager().build_command(
+                    argv, sandbox_profile, f"{task_id}-check-{attempt}-{check_id}",
+                    workspace, runs_dir / "sandbox-runtime" / task_id / check_id,
+                    task_permissions,
+                )
+                check_timeout = min(check_timeout, sandbox_evidence["timeout_seconds"])
             exit_code, stdout, stderr, termination = run_command_controlled(
-                argv, workspace, ACCEPTANCE_CHECK_TIMEOUT_SECONDS, cancel_file,
+                argv, workspace, check_timeout, cancel_file, environment,
             )
             if termination == "cancelled":
                 result = "cancelled"
@@ -132,6 +151,8 @@ def run_acceptance_checks(check_ids: list[str], workspace: Path,
             "exit_code": exit_code,
             "stdout_path": str(stdout_path),
             "stderr_path": str(stderr_path),
+            "sandbox_status": sandbox_evidence["status"] if sandbox_evidence else "not-requested",
+            "sandbox_backend": sandbox_evidence.get("backend") if sandbox_evidence else None,
         })
         if result == "cancelled":
             return {"status": "cancelled", "results": results}
@@ -357,6 +378,74 @@ def verify_change_evidence(repo: Path, record: dict[str, Any]) -> None:
     if evidence.get("acceptance", {}).get("automated_checks", {}).get("status") == "failed":
         raise ValueError("Configured acceptance checks failed; fix the task and rerun before approval.")
 
+
+
+def publish_review_artifact(evidence: dict[str, Any], runs_dir: Path,
+                           task_id: str, attempt: int) -> dict[str, Any]:
+    """Publish a portable immutable review snapshot after a sandboxed task has stopped."""
+    from artifact_broker import export_artifact
+
+    source_dir = runs_dir / task_id / f".artifact-source-attempt-{attempt}"
+    if source_dir.exists():
+        raise ValueError(f"Artifact staging directory already exists: {source_dir}")
+    source_dir.mkdir(parents=True)
+    try:
+        diff_source = Path(evidence["diff_path"])
+        if diff_source.is_symlink() or not diff_source.is_file():
+            raise ValueError("Review diff is missing or unsafe; cannot publish review artifact.")
+        shutil.copyfile(diff_source, source_dir / "review.diff")
+        portable = dict(evidence)
+        portable["diff_path"] = "review.diff"
+        portable.pop("evidence_path", None)
+        acceptance = portable.get("acceptance", {})
+        checks = acceptance.get("automated_checks", {})
+        for item in checks.get("results", []):
+            for key in ("stdout_path", "stderr_path"):
+                if item.get(key):
+                    item[key] = Path(item[key]).name
+        (source_dir / "review-evidence.json").write_text(
+            json.dumps(portable, ensure_ascii=False, indent=2) + "\\n",
+            encoding="utf-8",
+        )
+        result = export_artifact(
+            source_dir, runs_dir / "artifacts", task_id, "review-evidence",
+            ["review.diff", "review-evidence.json"], evidence.get("base_commit"),
+        )
+        manifest = result["manifest"]
+        return {
+            "artifact_id": manifest["artifact_id"],
+            "artifact_dir": result["artifact_dir"],
+            "kind": manifest["kind"],
+            "source_revision": manifest["source_revision"],
+        }
+    finally:
+        shutil.rmtree(source_dir, ignore_errors=True)
+
+
+def verify_review_artifact(record: dict[str, Any]) -> dict[str, Any]:
+    """Verify immutable artifact integrity and bind it to the reviewed workspace evidence."""
+    from artifact_broker import verify_artifact
+
+    artifact = record.get("review_artifact")
+    if not isinstance(artifact, dict) or not artifact.get("artifact_dir"):
+        raise ValueError("Sandbox-required task is missing its immutable review artifact.")
+    artifact_dir = Path(artifact["artifact_dir"])
+    manifest = verify_artifact(artifact_dir)
+    if (manifest.get("task_id") != record.get("task_id")
+            or manifest.get("kind") != "review-evidence"
+            or manifest.get("artifact_id") != artifact.get("artifact_id")):
+        raise ValueError("Review artifact manifest does not match the task journal.")
+    artifact_evidence = json.loads((artifact_dir / "review-evidence.json").read_text(encoding="utf-8"))
+    evidence_path = record.get("review_evidence")
+    if not evidence_path or not Path(evidence_path).is_file():
+        raise ValueError("Original review evidence is missing.")
+    original = json.loads(Path(evidence_path).read_text(encoding="utf-8"))
+    if (artifact_evidence.get("task_id") != record.get("task_id")
+            or artifact_evidence.get("fingerprint") != original.get("fingerprint")
+            or artifact_evidence.get("base_commit") != original.get("base_commit")
+            or manifest.get("source_revision") != original.get("base_commit")):
+        raise ValueError("Immutable review artifact is not bound to the current task evidence.")
+    return manifest
 
 
 def resolve_task_path(task_file: str, runs_dir: Path) -> Path:
