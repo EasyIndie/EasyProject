@@ -64,6 +64,7 @@ class ArtifactBrokerTests(unittest.TestCase):
     def test_export_is_content_addressed_and_idempotent(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            self.addCleanup(self.make_writable, root)
             workspace = self.make_workspace(root)
             store = root / "store"
             first = broker.export_artifact(workspace, store, "task-01", "diff", ["src/main.py"])
@@ -126,6 +127,7 @@ class ArtifactBrokerTests(unittest.TestCase):
     def test_tampered_and_undeclared_artifact_files_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            self.addCleanup(self.make_writable, root)
             workspace = self.make_workspace(root)
             result = broker.export_artifact(workspace, root / "store", "task-01", "diff", ["report.json"])
             artifact_dir = Path(result["artifact_dir"])
@@ -158,6 +160,7 @@ class ArtifactBrokerTests(unittest.TestCase):
     def test_existing_materialization_destination_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            self.addCleanup(self.make_writable, root)
             workspace = self.make_workspace(root)
             result = broker.export_artifact(workspace, root / "store", "task-01", "diff", ["report.json"])
             destination = root / "existing"
