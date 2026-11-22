@@ -407,17 +407,20 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             workspace = prepare_worktree(ROOT, runs_dir, task_id, record) if use_worktrees else ROOT
             cancel_file = runs_dir / task_id / f"cancel-attempt-{attempt}.request"
             task_envelope = json.loads(task_path.read_text(encoding="utf-8"))
-            command = [
-                sys.executable, str(RUNNER), "--task", str(task_path),
-                "--harness", item.get("harness", "codex"),
-                "--output", str(task_output), "--cwd", str(workspace),
-                "--cancel-file", str(cancel_file),
-            ]
+            harness = item.get("harness", "codex")
             if (
-                item.get("harness", "codex") == "pi"
-                and task_envelope.get("harness_options", {}).get("pi_unsandboxed_write") is True
+                harness == "pi"
+                and task_envelope.get("permissions", {}).get("repository_write") is True
+                and not allow_unsandboxed_pi_write
             ):
-                command.append("--allow-unsandboxed-pi-write")
+                raise ValueError(
+                    f"{task_id}: Pi write requires the orchestrator's explicit "
+                    "--allow-unsandboxed-pi-write control-plane flag."
+                )
+            command = build_runner_command(
+                task_path, harness, task_output, workspace, cancel_file,
+                allow_unsandboxed_pi_write,
+            )
             record.update(
                 status="running", attempts=attempt, cancel_file=str(cancel_file),
                 started_at=now(), updated_at=now(),
