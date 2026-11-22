@@ -4,6 +4,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -254,6 +255,32 @@ class EvolutionContractTests(unittest.TestCase):
             "pi-case", "Add a regression test", "pi", ["python-unittest"]
         )
         self.assertNotIn("harness_options", task)
+
+    def test_pi_resume_requires_fresh_cli_opt_in_not_manifest_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            candidate = Path(tmp) / "candidate"
+            candidate.mkdir()
+            run_dir = Path(tmp) / "runtime"
+            run_dir.mkdir()
+            (run_dir / "manifest.json").write_text(
+                json.dumps({
+                    "harness": "pi",
+                    "pi_unsandboxed_write_authorized": True,
+                }),
+                encoding="utf-8",
+            )
+            args = type("Args", (), {
+                "id": "pi-case", "action": "resume",
+                "allow_unsandboxed_pi_write": False,
+            })()
+            with patch.object(evolution, "candidate_paths", return_value=(candidate, "branch", run_dir)):
+                with self.assertRaisesRegex(ValueError, "fresh human"):
+                    evolution.continue_run(args)
+
+                args.allow_unsandboxed_pi_write = True
+                with patch.object(evolution, "invoke_candidate", return_value=0) as invoke:
+                    self.assertEqual(evolution.continue_run(args), 0)
+                    self.assertTrue(invoke.call_args.kwargs["allow_unsandboxed_pi_write"])
 
     def test_non_pi_task_has_no_harness_options(self):
         task = evolution.make_task(
