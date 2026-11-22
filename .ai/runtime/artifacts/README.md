@@ -17,7 +17,7 @@ Each artifact is stored in a content-addressed directory:
     <declared relative files...>
 ```
 
-The manifest records protocol version, artifact ID, task ID, kind, creation time, source Git revision, per-file SHA-256 and byte count, and total bytes. The artifact ID is the SHA-256 of canonical manifest JSON without the ID field.
+The manifest records protocol version, artifact ID, task ID, kind, creation time, source Git revision, per-file SHA-256 and byte count, and total bytes. The artifact ID is the SHA-256 of canonical manifest JSON without the ID and creation-time fields, so identical task/kind/revision/file content exports idempotently.
 
 Files are copied, never hard-linked. The store and source workspace must be disjoint. Files and directories are made read-only after export. The receiver must run `verify` before use; read-only permissions are defense in depth, not proof against the store owner.
 
