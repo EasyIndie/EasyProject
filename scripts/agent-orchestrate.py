@@ -537,20 +537,51 @@ def run_plan(plan: dict[str, Any], runs_dir: Path, state: dict[str, Any], use_wo
             result = subprocess.run(command, cwd=ROOT, check=False)
             record["last_exit_code"] = result.returncode
             record["handoff"] = str(task_output)
+            sandbox_enforced = not require_sandbox
+            sandbox_error = None
+            if result.returncode == 0 and require_sandbox:
+                try:
+                    handoff = json.loads(task_output.read_text(encoding="utf-8"))
+                    sandbox_enforced = handoff.get("artifacts", {}).get("sandbox_status") == "enforced"
+                except (OSError, json.JSONDecodeError) as exc:
+                    sandbox_error = f"Required sandbox handoff evidence is missing or invalid: {exc}"
+                if not sandbox_enforced and sandbox_error is None:
+                    sandbox_error = "Runner completed without an enforced sandbox status."
             automated_checks = {"status": "not_configured", "results": []}
-            if result.returncode == 0:
-                automated_checks = run_acceptance_checks(
-                    task_envelope.get("acceptance_checks", []), workspace,
-                    runs_dir, task_id, attempt, cancel_file,
-                )
+            if result.returncode == 0 and sandbox_error is None:
+                try:
+                    automated_checks = run_acceptance_checks(
+                        task_envelope.get("acceptance_checks", []), workspace,
+                        runs_dir, task_id, attempt, cancel_file,
+                        require_sandbox=require_sandbox,
+                        sandbox_profile=sandbox_profile,
+                        task_permissions=task_envelope.get("permissions", {}),
+                    )
+                except RuntimeError as exc:
+                    automated_checks = {"status": "failed", "results": [], "error": str(exc)}
             record["automated_checks"] = automated_checks
+            artifact_error = None
             if use_worktrees and record.get("base_commit"):
                 evidence = collect_change_evidence(
                     workspace, record["base_commit"], task_id, runs_dir,
                     automated_checks=automated_checks,
                 )
                 record["review_evidence"] = evidence["evidence_path"]
-            if result.returncode == 130 or automated_checks["status"] == "cancelled":
+                if (require_sandbox and sandbox_enforced
+                        and automated_checks["status"] in {"passed", "not_configured"}):
+                    try:
+                        record["review_artifact"] = publish_review_artifact(
+                            evidence, runs_dir, task_id, attempt,
+                        )
+                    except (OSError, ValueError, RuntimeError) as exc:
+                        artifact_error = str(exc)
+            if artifact_error:
+                record.update(status="failed", termination_reason="artifact_export_failed",
+                              artifact_error=artifact_error, finished_at=now())
+            elif sandbox_error:
+                record.update(status="failed", termination_reason="sandbox_evidence_invalid",
+                              sandbox_error=sandbox_error, finished_at=now())
+            elif result.returncode == 130 or automated_checks["status"] == "cancelled":
                 record.update(status="cancelled", termination_reason="cancelled", finished_at=now())
             elif result.returncode == 0 and automated_checks["status"] in {"passed", "not_configured"}:
                 # The adapter intentionally emits partial; only explicit human
