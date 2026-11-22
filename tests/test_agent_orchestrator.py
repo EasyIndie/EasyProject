@@ -153,16 +153,18 @@ class OrchestratorTests(unittest.TestCase):
             root = Path(tmp)
             workspace = root / "workspace"
             workspace.mkdir()
-            with self.assertRaisesRegex(RuntimeError, "No registered backend"):
-                orchestrator.run_acceptance_checks(
-                    ["python-unittest"], workspace, root / "runs",
-                    "task-a", 1, require_sandbox=True,
-                    sandbox_profile=ROOT / ".ai/runtime/examples/sandbox-profile.json",
-                    task_permissions={
-                        "repository_read": True, "repository_write": True,
-                        "network_access": False, "secret_access": False,
-                    },
-                )
+            import sandbox_runtime
+            with patch("sandbox_runtime.SandboxManager", return_value=sandbox_runtime.SandboxManager(backends=[])):
+                with self.assertRaisesRegex(RuntimeError, "No registered backend"):
+                        orchestrator.run_acceptance_checks(
+                        ["python-unittest"], workspace, root / "runs",
+                        "task-a", 1, require_sandbox=True,
+                        sandbox_profile=ROOT / ".ai/runtime/examples/sandbox-profile.json",
+                        task_permissions={
+                            "repository_read": True, "repository_write": True,
+                            "network_access": False, "secret_access": False,
+                        },
+                    )
 
     def test_review_artifact_is_portable_and_bound_to_review_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
